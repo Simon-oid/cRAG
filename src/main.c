@@ -1,26 +1,16 @@
 #include <stdio.h>
 #include <string.h>
-
 #include "crag.h"
+
+int cmd_index(int argc, char **argv);
+int cmd_query(int argc, char **argv);
 
 static void usage(const char *prog) {
     fprintf(stderr, "cRAG %s\n", CRAG_VERSION);
     fprintf(stderr, "usage: %s <command> [args]\n", prog);
     fprintf(stderr, "commands:\n");
-    fprintf(stderr, "  index <dir>     build index from documents in <dir>\n");
-    fprintf(stderr, "  query <text>    retrieve top-k chunks for <text>\n");
-}
-
-static int cmd_index(int argc, char **argv) {
-    (void)argc; (void)argv;
-    fprintf(stderr, "index: not implemented\n");
-    return 1;
-}
-
-static int cmd_query(int argc, char **argv) {
-    (void)argc; (void)argv;
-    fprintf(stderr, "query: not implemented\n");
-    return 1;
+    fprintf(stderr, "  index <dir>   [--backend openai|local] [--db path] [--url url]\n");
+    fprintf(stderr, "  query <text>  [--backend openai|local] [--db path] [--top-k N] [--generate]\n");
 }
 
 int main(int argc, char **argv) {

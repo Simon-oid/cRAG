@@ -4,3 +4,6 @@ crag
 build/
 data/
 .cache/
+research/
+.research/
+docs/research/
