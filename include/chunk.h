@@ -1,7 +1,8 @@
 #ifndef CHUNK_H
 #define CHUNK_H
 
-#define CHUNK_MAX_CHARS_DEFAULT 512
+#define CHUNK_MAX_CHARS_DEFAULT 2048
+#define CHUNK_OVERLAP_DEFAULT   200
 
 /* Reads file at path, splits into chunks of at most max_chars.
    Fills chunks[] (caller must free each .text and .source).

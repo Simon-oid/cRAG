@@ -14,7 +14,8 @@ static const char *SCHEMA =
     "  text   TEXT NOT NULL,"
     "  dim    INTEGER NOT NULL,"
     "  vec    BLOB NOT NULL"
-    ");";
+    ");"
+    "CREATE INDEX IF NOT EXISTS idx_source ON chunks(source);";
 
 int store_open(const char *path, crag_store_t *s) {
     if (sqlite3_open(path, &s->db) != SQLITE_OK) {
@@ -22,8 +23,33 @@ int store_open(const char *path, crag_store_t *s) {
         return -1;
     }
     char *err = NULL;
+    if (sqlite3_exec(s->db, "PRAGMA journal_mode=WAL;", NULL, NULL, &err) != SQLITE_OK) {
+        fprintf(stderr, "store: WAL: %s\n", err);
+        sqlite3_free(err);
+        return -1;
+    }
     if (sqlite3_exec(s->db, SCHEMA, NULL, NULL, &err) != SQLITE_OK) {
         fprintf(stderr, "store: schema: %s\n", err);
+        sqlite3_free(err);
+        return -1;
+    }
+    return 0;
+}
+
+int store_begin(crag_store_t *s) {
+    char *err = NULL;
+    if (sqlite3_exec(s->db, "BEGIN", NULL, NULL, &err) != SQLITE_OK) {
+        fprintf(stderr, "store: begin: %s\n", err);
+        sqlite3_free(err);
+        return -1;
+    }
+    return 0;
+}
+
+int store_commit(crag_store_t *s) {
+    char *err = NULL;
+    if (sqlite3_exec(s->db, "COMMIT", NULL, NULL, &err) != SQLITE_OK) {
+        fprintf(stderr, "store: commit: %s\n", err);
         sqlite3_free(err);
         return -1;
     }
@@ -100,6 +126,19 @@ int store_search(crag_store_t *s, const float *qvec, int dim, int k,
     }
     sqlite3_finalize(stmt);
     return n;
+}
+
+int store_stats(crag_store_t *s, crag_store_stats_t *out) {
+    sqlite3_stmt *stmt;
+    const char *sql =
+        "SELECT COUNT(*), COUNT(DISTINCT source), MAX(dim) FROM chunks";
+    if (sqlite3_prepare_v2(s->db, sql, -1, &stmt, NULL) != SQLITE_OK) return -1;
+    if (sqlite3_step(stmt) != SQLITE_ROW) { sqlite3_finalize(stmt); return -1; }
+    out->chunks = sqlite3_column_int(stmt, 0);
+    out->files  = sqlite3_column_int(stmt, 1);
+    out->dim    = sqlite3_column_int(stmt, 2);
+    sqlite3_finalize(stmt);
+    return 0;
 }
 
 void store_close(crag_store_t *s) {

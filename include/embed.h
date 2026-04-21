@@ -8,6 +8,11 @@ typedef struct crag_embed_backend crag_embed_backend_t;
 struct crag_embed_backend {
     const char *name;
     int (*embed_one)(const char *text, float *vec, int *dim, void *ctx);
+    /* NULL = no batch support; caller falls back to N x embed_one */
+    int (*embed_many)(const char **texts, int n,
+                      float *vecs,   /* flat: vecs[i*CRAG_EMBED_DIM_MAX] */
+                      int   *dims,   /* dims[i] per result */
+                      void  *ctx);
     void       *ctx;
 };
 
