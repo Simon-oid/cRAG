@@ -13,7 +13,7 @@
 
 /* walk state passed via file-scope struct (nftw provides no user-data pointer) */
 static struct {
-    const char    *exts[32];
+    char          *exts[32];  /* owned by parse_exts / free_exts */
     int            next;
     crag_embed_backend_t *emb;
     crag_store_t  *store;
@@ -22,6 +22,11 @@ static struct {
     int            total_errors;
     int            total_files;
 } g_walk;
+
+static void free_exts(void) {
+    for (int i = 0; i < g_walk.next; i++) { free(g_walk.exts[i]); g_walk.exts[i] = NULL; }
+    g_walk.next = 0;
+}
 
 static int has_ext(const char *path) {
     const char *dot = strrchr(path, '.');
@@ -111,7 +116,9 @@ static void parse_exts(const char *extstr) {
     g_walk.next = 0;
     char *tok = strtok(dup, ",");
     while (tok && g_walk.next < 32) {
-        g_walk.exts[g_walk.next++] = strdup(tok);
+        char *s = strdup(tok);
+        if (!s) break;
+        g_walk.exts[g_walk.next++] = s;
         tok = strtok(NULL, ",");
     }
     free(dup);
@@ -163,6 +170,7 @@ int cmd_index(int argc, char **argv) {
 
     store_close(&store);
     embed_backend_free(emb);
+    free_exts();
 
     return g_walk.total_chunks == 0 && g_walk.total_errors > 0 ? 4 : 0;
 }

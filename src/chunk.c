@@ -14,10 +14,10 @@ static char *read_file(const char *path, size_t *out_len) {
     if (sz < 0 || sz > 16 * 1024 * 1024) { fclose(f); return NULL; }
     char *buf = malloc((size_t)sz + 1);
     if (!buf) { fclose(f); return NULL; }
-    fread(buf, 1, (size_t)sz, f);
-    buf[sz] = '\0';
+    size_t nr = fread(buf, 1, (size_t)sz, f);
+    buf[nr] = '\0';
     fclose(f);
-    *out_len = (size_t)sz;
+    *out_len = nr;
     return buf;
 }
 

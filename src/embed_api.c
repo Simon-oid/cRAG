@@ -55,17 +55,20 @@ static int embed_many_oai(const char **texts, int n,
     for (int i = 0; i < n; i++) arr_sz += strlen(texts[i]) * 6 + 4;
     char *arr = malloc(arr_sz);
     if (!arr) return -1;
-    arr[0] = '['; arr[1] = '\0';
+    char *wp = arr;
+    *wp++ = '[';
     for (int i = 0; i < n; i++) {
         char *esc = json_escape_dup(texts[i]);
         if (!esc) { free(arr); return -1; }
-        strcat(arr, "\"");
-        strcat(arr, esc);
-        strcat(arr, "\"");
-        if (i < n - 1) strcat(arr, ",");
+        size_t el = strlen(esc);
+        *wp++ = '"';
+        memcpy(wp, esc, el); wp += el;
+        *wp++ = '"';
+        if (i < n - 1) *wp++ = ',';
         free(esc);
     }
-    strcat(arr, "]");
+    *wp++ = ']';
+    *wp   = '\0';
 
     size_t body_sz = strlen(arr) + 64;
     char *body = malloc(body_sz);

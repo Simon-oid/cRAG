@@ -2,9 +2,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <math.h>
 #include <sqlite3.h>
 #include "store.h"
+#include "search.h"
 #include "crag.h"
 
 static const char *SCHEMA =
@@ -18,19 +18,26 @@ static const char *SCHEMA =
     "CREATE INDEX IF NOT EXISTS idx_source ON chunks(source);";
 
 int store_open(const char *path, crag_store_t *s) {
+    s->db = NULL;
     if (sqlite3_open(path, &s->db) != SQLITE_OK) {
         fprintf(stderr, "store: %s\n", sqlite3_errmsg(s->db));
+        sqlite3_close(s->db);
+        s->db = NULL;
         return -1;
     }
     char *err = NULL;
     if (sqlite3_exec(s->db, "PRAGMA journal_mode=WAL;", NULL, NULL, &err) != SQLITE_OK) {
-        fprintf(stderr, "store: WAL: %s\n", err);
+        fprintf(stderr, "store: WAL: %s\n", err ? err : "?");
         sqlite3_free(err);
+        sqlite3_close(s->db);
+        s->db = NULL;
         return -1;
     }
     if (sqlite3_exec(s->db, SCHEMA, NULL, NULL, &err) != SQLITE_OK) {
-        fprintf(stderr, "store: schema: %s\n", err);
+        fprintf(stderr, "store: schema: %s\n", err ? err : "?");
         sqlite3_free(err);
+        sqlite3_close(s->db);
+        s->db = NULL;
         return -1;
     }
     return 0;
@@ -62,24 +69,14 @@ int store_insert(crag_store_t *s, const crag_chunk_t *chunk) {
         "INSERT INTO chunks(source,text,dim,vec) VALUES(?,?,?,?)";
     if (sqlite3_prepare_v2(s->db, sql, -1, &stmt, NULL) != SQLITE_OK) return -1;
 
-    sqlite3_bind_text(stmt, 1, chunk->source, -1, SQLITE_STATIC);
-    sqlite3_bind_text(stmt, 2, chunk->text,   -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 1, chunk->source, -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, chunk->text,   -1, SQLITE_TRANSIENT);
     sqlite3_bind_int (stmt, 3, chunk->dim);
-    sqlite3_bind_blob(stmt, 4, chunk->vec, chunk->dim * (int)sizeof(float), SQLITE_STATIC);
+    sqlite3_bind_blob(stmt, 4, chunk->vec, chunk->dim * (int)sizeof(float), SQLITE_TRANSIENT);
 
     int rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
     return rc == SQLITE_DONE ? 0 : -1;
-}
-
-static float cosine(const float *a, const float *b, int dim) {
-    float dot = 0, na = 0, nb = 0;
-    for (int i = 0; i < dim; i++) {
-        dot += a[i] * b[i];
-        na  += a[i] * a[i];
-        nb  += b[i] * b[i];
-    }
-    return dot / (sqrtf(na) * sqrtf(nb) + 1e-9f);
 }
 
 int store_search(crag_store_t *s, const float *qvec, int dim, int k,
@@ -88,18 +85,28 @@ int store_search(crag_store_t *s, const float *qvec, int dim, int k,
     const char *sql = "SELECT id,source,text,dim,vec FROM chunks";
     if (sqlite3_prepare_v2(s->db, sql, -1, &stmt, NULL) != SQLITE_OK) return -1;
 
+    if (dim <= 0 || dim > CRAG_EMBED_DIM_MAX) { sqlite3_finalize(stmt); return -1; }
+
     int n = 0;
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         int rdim = sqlite3_column_int(stmt, 3);
         if (rdim != dim) continue;
+        if (rdim <= 0 || rdim > CRAG_EMBED_DIM_MAX) continue;
+
+        int vbytes = sqlite3_column_bytes(stmt, 4);
+        if (vbytes != rdim * (int)sizeof(float)) continue;
 
         const float *rvec = sqlite3_column_blob(stmt, 4);
-        float score = cosine(qvec, rvec, dim);
+        if (!rvec) continue;
+        float score = search_cosine(qvec, rvec, dim);
 
         if (n < k) {
+            char *src = strdup((const char *)sqlite3_column_text(stmt, 1));
+            char *txt = strdup((const char *)sqlite3_column_text(stmt, 2));
+            if (!src || !txt) { free(src); free(txt); continue; }
             results[n].id     = sqlite3_column_int(stmt, 0);
-            results[n].source = strdup((const char *)sqlite3_column_text(stmt, 1));
-            results[n].text   = strdup((const char *)sqlite3_column_text(stmt, 2));
+            results[n].source = src;
+            results[n].text   = txt;
             results[n].dim    = rdim;
             memcpy(results[n].vec, rvec, (size_t)rdim * sizeof(float));
             scores[n] = score;
@@ -110,11 +117,14 @@ int store_search(crag_store_t *s, const float *qvec, int dim, int k,
             }
             n++;
         } else if (score > scores[n-1]) {
+            char *src = strdup((const char *)sqlite3_column_text(stmt, 1));
+            char *txt = strdup((const char *)sqlite3_column_text(stmt, 2));
+            if (!src || !txt) { free(src); free(txt); continue; }
             free(results[n-1].source);
             free(results[n-1].text);
             results[n-1].id     = sqlite3_column_int(stmt, 0);
-            results[n-1].source = strdup((const char *)sqlite3_column_text(stmt, 1));
-            results[n-1].text   = strdup((const char *)sqlite3_column_text(stmt, 2));
+            results[n-1].source = src;
+            results[n-1].text   = txt;
             results[n-1].dim    = rdim;
             memcpy(results[n-1].vec, rvec, (size_t)rdim * sizeof(float));
             scores[n-1] = score;

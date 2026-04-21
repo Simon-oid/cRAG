@@ -32,6 +32,10 @@ int cmd_query(int argc, char **argv) {
     }
 
     if (!query_text) { fprintf(stderr, "query: missing <text>\n"); return 2; }
+    if (top_k <= 0 || top_k > 1000) {
+        fprintf(stderr, "query: invalid --top-k (must be 1..1000)\n");
+        return 2;
+    }
     if (!db_path) db_path = getenv("CRAG_DB");
     if (!db_path) db_path = "./crag.db";
 
@@ -80,14 +84,20 @@ int cmd_query(int argc, char **argv) {
     } else {
         /* build context from results */
         size_t ctx_sz = 1;
-        for (int i = 0; i < n; i++) ctx_sz += strlen(results[i].text) + 4;
+        for (int i = 0; i < n; i++) {
+            size_t tl = strlen(results[i].text);
+            if (tl > (size_t)-1 - ctx_sz - 4) { rc = 1; goto cleanup; }
+            ctx_sz += tl + 2;
+        }
         char *context = malloc(ctx_sz);
         if (!context) { rc = 1; goto cleanup; }
-        context[0] = '\0';
+        char *wp = context;
         for (int i = 0; i < n; i++) {
-            strcat(context, results[i].text);
-            strcat(context, "\n\n");
+            size_t tl = strlen(results[i].text);
+            memcpy(wp, results[i].text, tl); wp += tl;
+            *wp++ = '\n'; *wp++ = '\n';
         }
+        *wp = '\0';
 
         size_t prompt_sz = strlen(context) + strlen(query_text) + 32;
         char *prompt = malloc(prompt_sz);

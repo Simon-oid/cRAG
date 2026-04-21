@@ -1,0 +1,139 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include "chunk.h"
+#include "test.h"
+
+static int write_file(const char *path, const char *content) {
+    FILE *f = fopen(path, "w");
+    if (!f) return -1;
+    fputs(content, f);
+    fclose(f);
+    return 0;
+}
+
+static void free_chunks(char **texts, int n) {
+    for (int i = 0; i < n; i++) { free(texts[i]); texts[i] = NULL; }
+}
+
+static void test_missing_file_returns_error(void) {
+    char *texts[4] = {0};
+    int n = chunk_file("/tmp/crag_test_nope_xyz_does_not_exist", 512, texts, 4);
+    TEST_ASSERT(n == -1);
+}
+
+static void test_empty_file_produces_zero_chunks(void) {
+    const char *p = "/tmp/crag_test_empty.md";
+    write_file(p, "");
+    char *texts[4] = {0};
+    int n = chunk_file(p, 512, texts, 4);
+    TEST_ASSERT(n == 0);
+    free_chunks(texts, n);
+    unlink(p);
+}
+
+static void test_markdown_splits_on_headers(void) {
+    const char *p = "/tmp/crag_test_md_headers.md";
+    write_file(p,
+        "# One\n"
+        "alpha alpha\n\n"
+        "## Two\n"
+        "beta beta\n\n"
+        "### Three\n"
+        "gamma gamma\n");
+    char *texts[8] = {0};
+    int n = chunk_file(p, 2048, texts, 8);
+    TEST_ASSERT(n == 3);
+    if (n == 3) {
+        TEST_ASSERT(strstr(texts[0], "# One")   != NULL);
+        TEST_ASSERT(strstr(texts[0], "alpha")   != NULL);
+        TEST_ASSERT(strstr(texts[1], "## Two")  != NULL);
+        TEST_ASSERT(strstr(texts[2], "### Three") != NULL);
+    }
+    free_chunks(texts, n);
+    unlink(p);
+}
+
+static void test_code_fence_is_not_header(void) {
+    /* '#' inside a fenced code block must not trigger a section break. */
+    const char *p = "/tmp/crag_test_fence.md";
+    write_file(p,
+        "# Title\n"
+        "intro\n\n"
+        "```c\n"
+        "# not a header\n"
+        "int main(void) { return 0; }\n"
+        "```\n"
+        "outro\n");
+    char *texts[8] = {0};
+    int n = chunk_file(p, 4096, texts, 8);
+    TEST_ASSERT(n == 1);
+    if (n == 1) {
+        TEST_ASSERT(strstr(texts[0], "# not a header") != NULL);
+        TEST_ASSERT(strstr(texts[0], "outro")          != NULL);
+    }
+    free_chunks(texts, n);
+    unlink(p);
+}
+
+static void test_large_paragraph_forces_sliding_split(void) {
+    const char *p = "/tmp/crag_test_slide.txt";
+    /* ~1500 chars, no paragraph breaks */
+    char buf[1501];
+    for (int i = 0; i < 1500; i++) buf[i] = (i % 80 == 79) ? ' ' : 'a';
+    buf[1500] = '\0';
+    write_file(p, buf);
+
+    char *texts[16] = {0};
+    int n = chunk_file(p, 400, texts, 16);
+    TEST_ASSERT(n >= 2);
+    for (int i = 0; i < n; i++) TEST_ASSERT(strlen(texts[i]) > 0);
+    free_chunks(texts, n);
+    unlink(p);
+}
+
+static void test_chunks_are_trimmed(void) {
+    const char *p = "/tmp/crag_test_trim.md";
+    write_file(p, "# Header\n\n\n   body text   \n\n\n");
+    char *texts[4] = {0};
+    int n = chunk_file(p, 2048, texts, 4);
+    TEST_ASSERT(n >= 1);
+    if (n >= 1) {
+        size_t L = strlen(texts[0]);
+        TEST_ASSERT(L > 0);
+        TEST_ASSERT(texts[0][0]     != ' ');
+        TEST_ASSERT(texts[0][0]     != '\n');
+        TEST_ASSERT(texts[0][L - 1] != ' ');
+        TEST_ASSERT(texts[0][L - 1] != '\n');
+    }
+    free_chunks(texts, n);
+    unlink(p);
+}
+
+static void test_respects_max_chunks_cap(void) {
+    const char *p = "/tmp/crag_test_cap.md";
+    char big[8192];
+    int off = 0;
+    for (int i = 0; i < 20; i++)
+        off += snprintf(big + off, sizeof(big) - off, "## H%d\npara %d\n\n", i, i);
+    write_file(p, big);
+
+    char *texts[3] = {0};
+    int n = chunk_file(p, 2048, texts, 3);
+    TEST_ASSERT(n <= 3);
+    free_chunks(texts, n);
+    unlink(p);
+}
+
+int main(void) {
+    fprintf(stderr, "test_chunker:\n");
+    TEST_RUN(test_missing_file_returns_error);
+    TEST_RUN(test_empty_file_produces_zero_chunks);
+    TEST_RUN(test_markdown_splits_on_headers);
+    TEST_RUN(test_code_fence_is_not_header);
+    TEST_RUN(test_large_paragraph_forces_sliding_split);
+    TEST_RUN(test_chunks_are_trimmed);
+    TEST_RUN(test_respects_max_chunks_cap);
+    TEST_DONE();
+}

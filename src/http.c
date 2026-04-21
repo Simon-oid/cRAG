@@ -1,18 +1,27 @@
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 #include <curl/curl.h>
 #include "http.h"
 
+#define HTTP_MAX_RESPONSE (256u * 1024u * 1024u)   /* 256 MB hard cap */
+
 static size_t write_cb(char *ptr, size_t size, size_t nmemb, void *userdata) {
     http_buf_t *b = userdata;
+    if (size && nmemb > SIZE_MAX / size) return 0;
     size_t n = size * nmemb;
+    if (n > SIZE_MAX - b->len - 1) return 0;
+    if (b->len + n > HTTP_MAX_RESPONSE) return 0;
     if (b->len + n + 1 > b->cap) {
-        size_t newcap = b->cap ? b->cap * 2 : 4096;
-        while (newcap < b->len + n + 1) newcap *= 2;
+        size_t newcap = b->cap ? b->cap : 4096;
+        while (newcap < b->len + n + 1) {
+            if (newcap > SIZE_MAX / 2) return 0;
+            newcap *= 2;
+        }
         char *tmp = realloc(b->data, newcap);
         if (!tmp) return 0;
         b->data = tmp;
-        b->cap = newcap;
+        b->cap  = newcap;
     }
     memcpy(b->data + b->len, ptr, n);
     b->len += n;
@@ -41,6 +50,8 @@ int http_post_json(const char *url, const char **headers, const char *body,
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_cb);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, buf);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 120L);
 
     CURLcode res = curl_easy_perform(curl);
     long status = -1;
