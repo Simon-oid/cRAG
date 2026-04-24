@@ -56,7 +56,7 @@ static void usage(const char *prog) {
     fprintf(stderr, "usage: %s <command> [args]\n\n", prog);
     fprintf(stderr, "commands:\n");
     fprintf(stderr, "  index <dir>  [--db path] [--ext txt,md] [--backend local|openai]\n");
-    fprintf(stderr, "               [--max-bytes N] [--url url]\n");
+    fprintf(stderr, "               [--max-bytes N] [--url url] [--force]\n");
     fprintf(stderr, "  query <text> [--db path] [-k N] [--format text|json] [--generate]\n");
     fprintf(stderr, "               [--backend local|openai] [--url url]\n");
     fprintf(stderr, "  stats        [--db path]\n");

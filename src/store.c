@@ -15,7 +15,13 @@ static const char *SCHEMA =
     "  dim    INTEGER NOT NULL,"
     "  vec    BLOB NOT NULL"
     ");"
-    "CREATE INDEX IF NOT EXISTS idx_source ON chunks(source);";
+    "CREATE INDEX IF NOT EXISTS idx_source ON chunks(source);"
+    "CREATE TABLE IF NOT EXISTS files ("
+    "  path       TEXT PRIMARY KEY,"
+    "  mtime      INTEGER NOT NULL,"
+    "  size       INTEGER NOT NULL,"
+    "  indexed_at INTEGER NOT NULL"
+    ");";
 
 int store_open(const char *path, crag_store_t *s) {
     s->db = NULL;
@@ -148,6 +154,108 @@ int store_stats(crag_store_t *s, crag_store_stats_t *out) {
     out->files  = sqlite3_column_int(stmt, 1);
     out->dim    = sqlite3_column_int(stmt, 2);
     sqlite3_finalize(stmt);
+    return 0;
+}
+
+int store_file_is_current(crag_store_t *s, const char *path,
+                          long long mtime, long long size) {
+    sqlite3_stmt *stmt;
+    const char *sql = "SELECT mtime,size FROM files WHERE path = ?";
+    if (sqlite3_prepare_v2(s->db, sql, -1, &stmt, NULL) != SQLITE_OK) return -1;
+    sqlite3_bind_text(stmt, 1, path, -1, SQLITE_TRANSIENT);
+    int hit = 0;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        long long rmtime = sqlite3_column_int64(stmt, 0);
+        long long rsize  = sqlite3_column_int64(stmt, 1);
+        if (rmtime == mtime && rsize == size) hit = 1;
+    }
+    sqlite3_finalize(stmt);
+    return hit;
+}
+
+int store_file_upsert(crag_store_t *s, const char *path,
+                      long long mtime, long long size, long long run_ts) {
+    sqlite3_stmt *stmt;
+    const char *sql =
+        "INSERT INTO files(path,mtime,size,indexed_at) VALUES(?,?,?,?) "
+        "ON CONFLICT(path) DO UPDATE SET "
+        "  mtime=excluded.mtime, size=excluded.size, indexed_at=excluded.indexed_at";
+    if (sqlite3_prepare_v2(s->db, sql, -1, &stmt, NULL) != SQLITE_OK) return -1;
+    sqlite3_bind_text (stmt, 1, path, -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt, 2, mtime);
+    sqlite3_bind_int64(stmt, 3, size);
+    sqlite3_bind_int64(stmt, 4, run_ts);
+    int rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    return rc == SQLITE_DONE ? 0 : -1;
+}
+
+int store_file_touch(crag_store_t *s, const char *path, long long run_ts) {
+    sqlite3_stmt *stmt;
+    const char *sql = "UPDATE files SET indexed_at = ? WHERE path = ?";
+    if (sqlite3_prepare_v2(s->db, sql, -1, &stmt, NULL) != SQLITE_OK) return -1;
+    sqlite3_bind_int64(stmt, 1, run_ts);
+    sqlite3_bind_text (stmt, 2, path, -1, SQLITE_TRANSIENT);
+    int rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    return rc == SQLITE_DONE ? 0 : -1;
+}
+
+int store_delete_chunks_for(crag_store_t *s, const char *path) {
+    sqlite3_stmt *stmt;
+    const char *sql = "DELETE FROM chunks WHERE source = ?";
+    if (sqlite3_prepare_v2(s->db, sql, -1, &stmt, NULL) != SQLITE_OK) return -1;
+    sqlite3_bind_text(stmt, 1, path, -1, SQLITE_TRANSIENT);
+    int rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    return rc == SQLITE_DONE ? 0 : -1;
+}
+
+int store_sweep_missing(crag_store_t *s, long long run_ts,
+                        int *files_removed, int *chunks_removed) {
+    if (files_removed)  *files_removed  = 0;
+    if (chunks_removed) *chunks_removed = 0;
+
+    /* Count what's about to go so the caller can report it. SQLite has no
+       portable RETURNING-with-CTE we can rely on across vendored versions,
+       so two selects + two deletes is the clearest path. */
+    sqlite3_stmt *stmt;
+    int frm = 0, crm = 0;
+
+    if (sqlite3_prepare_v2(s->db,
+            "SELECT COUNT(*) FROM files WHERE indexed_at < ?",
+            -1, &stmt, NULL) != SQLITE_OK) return -1;
+    sqlite3_bind_int64(stmt, 1, run_ts);
+    if (sqlite3_step(stmt) == SQLITE_ROW) frm = sqlite3_column_int(stmt, 0);
+    sqlite3_finalize(stmt);
+
+    if (sqlite3_prepare_v2(s->db,
+            "SELECT COUNT(*) FROM chunks WHERE source IN "
+            "(SELECT path FROM files WHERE indexed_at < ?)",
+            -1, &stmt, NULL) != SQLITE_OK) return -1;
+    sqlite3_bind_int64(stmt, 1, run_ts);
+    if (sqlite3_step(stmt) == SQLITE_ROW) crm = sqlite3_column_int(stmt, 0);
+    sqlite3_finalize(stmt);
+
+    if (sqlite3_prepare_v2(s->db,
+            "DELETE FROM chunks WHERE source IN "
+            "(SELECT path FROM files WHERE indexed_at < ?)",
+            -1, &stmt, NULL) != SQLITE_OK) return -1;
+    sqlite3_bind_int64(stmt, 1, run_ts);
+    int rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    if (rc != SQLITE_DONE) return -1;
+
+    if (sqlite3_prepare_v2(s->db,
+            "DELETE FROM files WHERE indexed_at < ?",
+            -1, &stmt, NULL) != SQLITE_OK) return -1;
+    sqlite3_bind_int64(stmt, 1, run_ts);
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    if (rc != SQLITE_DONE) return -1;
+
+    if (files_removed)  *files_removed  = frm;
+    if (chunks_removed) *chunks_removed = crm;
     return 0;
 }
 

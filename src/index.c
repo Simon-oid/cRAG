@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <ftw.h>
 #include "crag.h"
 #include "chunk.h"
@@ -28,6 +29,11 @@ static struct {
     int            drops_other;
     int            files_fully_dropped;
     int            files_partial;
+    /* incremental reindex */
+    long long      run_ts;          /* unix seconds captured at walk start */
+    int            force;           /* --force: re-embed even if unchanged */
+    int            files_skipped;   /* matched (path,mtime,size) in store */
+    int            files_indexed;   /* re-embedded (new or stale) */
 } g_walk;
 
 static void free_exts(void) {
@@ -112,8 +118,27 @@ static int embed_and_insert(const char *source, const char *text, int depth) {
 
 static int walk_cb(const char *fpath, const struct stat *sb,
                    int typeflag, struct FTW *ftwbuf) {
-    (void)sb; (void)ftwbuf;
+    (void)ftwbuf;
     if (typeflag != FTW_F || !has_ext(fpath)) return 0;
+
+    long long mtime = (long long)sb->st_mtime;
+    long long size  = (long long)sb->st_size;
+    g_walk.total_files++;
+
+    /* Incremental skip: if (path,mtime,size) matches a prior indexed file,
+       just mark it seen-this-run and move on. --force bypasses the check. */
+    if (!g_walk.force) {
+        int cur = store_file_is_current(g_walk.store, fpath, mtime, size);
+        if (cur == 1) {
+            store_file_touch(g_walk.store, fpath, g_walk.run_ts);
+            g_walk.files_skipped++;
+            goto after_file;
+        }
+    }
+
+    /* New file, changed file, or --force: delete any prior rows for this
+       path so we don't accumulate duplicates across runs. */
+    store_delete_chunks_for(g_walk.store, fpath);
 
     char *texts[MAX_CHUNKS_PER_FILE];
     int n = chunk_file(fpath, g_walk.max_chars, texts, MAX_CHUNKS_PER_FILE);
@@ -121,7 +146,6 @@ static int walk_cb(const char *fpath, const struct stat *sb,
         fprintf(stderr, "index: failed to chunk '%s'\n", fpath);
         return 0;
     }
-    g_walk.total_files++;
 
     int file_dropped = 0;
 
@@ -187,6 +211,16 @@ static int walk_cb(const char *fpath, const struct stat *sb,
         }
     }
 
+    /* Only record the file as indexed if at least one chunk landed. Files
+       whose every chunk was dropped are intentionally NOT upserted — that
+       way the next run (possibly with a fixed embedder) will retry them
+       instead of silently skipping. */
+    if (n > 0 && file_dropped < n) {
+        store_file_upsert(g_walk.store, fpath, mtime, size, g_walk.run_ts);
+        g_walk.files_indexed++;
+    }
+
+after_file:
     /* Bound the blast radius of an interrupt: commit every N files and open
        a fresh transaction. Without this, a single final COMMIT wrapping the
        whole nftw() walk means a killed/crashed process loses all work. */
@@ -218,6 +252,7 @@ int cmd_index(int argc, char **argv) {
     const char *url      = NULL;
     const char *extstr   = "txt,md";
     int max_chars = CHUNK_MAX_CHARS_DEFAULT;
+    int force = 0;
 
     for (int i = 0; i < argc; i++) {
         if      (strcmp(argv[i], "--backend")   == 0 && i+1 < argc) backend   = argv[++i];
@@ -226,6 +261,7 @@ int cmd_index(int argc, char **argv) {
         else if (strcmp(argv[i], "--url")       == 0 && i+1 < argc) url       = argv[++i];
         else if (strcmp(argv[i], "--ext")       == 0 && i+1 < argc) extstr    = argv[++i];
         else if (strcmp(argv[i], "--max-bytes") == 0 && i+1 < argc) max_chars = atoi(argv[++i]);
+        else if (strcmp(argv[i], "--force")     == 0) force = 1;
         else if (argv[i][0] != '-') dir = argv[i];
     }
 
@@ -252,14 +288,29 @@ int cmd_index(int argc, char **argv) {
     g_walk.drops_other         = 0;
     g_walk.files_fully_dropped = 0;
     g_walk.files_partial       = 0;
+    g_walk.run_ts              = (long long)time(NULL);
+    g_walk.force               = force;
+    g_walk.files_skipped       = 0;
+    g_walk.files_indexed       = 0;
 
     store_begin(&store);
     nftw(dir, walk_cb, 64, FTW_PHYS);
+
+    /* Sweep files that were in the store but weren't seen on disk this run.
+       Their `indexed_at` is still from a prior run, so it's < g_walk.run_ts. */
+    int files_removed = 0, chunks_removed = 0;
+    store_sweep_missing(&store, g_walk.run_ts, &files_removed, &chunks_removed);
+
     store_commit(&store);
 
     fprintf(stderr, "\n=== index summary ===\n");
     fprintf(stderr, "  files scanned:       %d\n", g_walk.total_files);
+    fprintf(stderr, "  files unchanged:     %d\n", g_walk.files_skipped);
+    fprintf(stderr, "  files indexed:       %d%s\n", g_walk.files_indexed,
+            force ? " (--force)" : "");
+    fprintf(stderr, "  files removed:       %d\n", files_removed);
     fprintf(stderr, "  chunks stored:       %d\n", g_walk.total_chunks);
+    fprintf(stderr, "  chunks removed:      %d\n", chunks_removed);
     fprintf(stderr, "  chunks dropped:      %d  (context=%d, other=%d)\n",
             g_walk.total_errors, g_walk.drops_context, g_walk.drops_other);
     fprintf(stderr, "  files partial:       %d\n", g_walk.files_partial);
