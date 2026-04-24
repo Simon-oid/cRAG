@@ -22,6 +22,7 @@ typedef enum {
     CRAG_EHTTP         = -5,
     CRAG_EDIM_MISMATCH = -6,
     CRAG_EDB           = -7,
+    CRAG_ECONTEXT      = -8,  /* input exceeds embedder's context window */
 } crag_err_t;
 
 const char *crag_errstr(int err);

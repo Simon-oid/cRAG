@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "crag.h"
 #include "embed.h"
 #include "http.h"
 #include "util.h"
@@ -31,9 +32,19 @@ static int embed_one_ollama(const char *text, float *vec, int *dim, void *ctx_) 
     free(body);
 
     if (status != 200) {
-        fprintf(stderr, "embed_ollama: HTTP %d: %s\n", status, buf.data ? buf.data : "");
+        int rc = CRAG_EHTTP;
+        /* Ollama returns 500 with a body like
+           {"error":"input length exceeds maximum context length"}
+           when the prompt tokenizes past the model window. Surface that
+           distinctly so callers can split-and-retry. */
+        if (buf.data && (strstr(buf.data, "context length") ||
+                         strstr(buf.data, "maximum context") ||
+                         strstr(buf.data, "input length exceeds")))
+            rc = CRAG_ECONTEXT;
+        else
+            fprintf(stderr, "embed_ollama: HTTP %d: %s\n", status, buf.data ? buf.data : "");
         free(buf.data);
-        return -1;
+        return rc;
     }
 
     size_t n = 0;

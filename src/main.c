@@ -18,6 +18,7 @@ const char *crag_errstr(int err) {
         case CRAG_EHTTP:         return "HTTP error";
         case CRAG_EDIM_MISMATCH: return "embedding dim mismatch";
         case CRAG_EDB:           return "database error";
+        case CRAG_ECONTEXT:      return "input exceeds embedder context";
         default:                 return "unknown error";
     }
 }
@@ -64,9 +65,10 @@ static void usage(const char *prog) {
     fprintf(stderr, "  CRAG_EMBED_BACKEND   local|openai (default: local)\n");
     fprintf(stderr, "  CRAG_EMBED_URL       embedding endpoint\n");
     fprintf(stderr, "  OPENAI_API_KEY       for openai backend\n");
-    fprintf(stderr, "  CRAG_GEN_BACKEND     anthropic|openai|local (default: local)\n");
+    fprintf(stderr, "  CRAG_GEN_BACKEND     anthropic|openai|ollama|local (default: local)\n");
     fprintf(stderr, "  CRAG_GEN_URL         generation endpoint\n");
     fprintf(stderr, "  CRAG_GEN_MODEL       model name\n");
+    fprintf(stderr, "  CRAG_GEN_MIN_SCORE   min top-1 cosine to call model (default 0.60)\n");
     fprintf(stderr, "  ANTHROPIC_API_KEY    for anthropic backend\n");
 }
 
