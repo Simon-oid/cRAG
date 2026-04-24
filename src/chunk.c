@@ -152,25 +152,53 @@ int chunk_file(const char *path, int max_chars,
     int n = 0;
 
     if (!md) {
-        /* plain text: paragraph split + sliding window */
+        /* Plain text: walk paragraph boundaries (\n\n) but coalesce small
+           paragraphs into one chunk. Only flush when adding the next
+           paragraph would exceed max_chars or at EOF. Otherwise short
+           files (e.g. 400-byte notes) fragment into N tiny chunks, one per
+           paragraph, which hurts retrieval: the embedder gets too little
+           context per vector. */
         const char *p = buf;
         const char *end = buf + len;
+        size_t sec_start = 0;
+
         while (p < end && n < max_chunks) {
             while (p < end && (*p == '\n' || *p == '\r')) p++;
             if (p >= end) break;
+
             const char *para_end = strstr(p, "\n\n");
-            size_t para_len = para_end ? (size_t)(para_end - p) : (size_t)(end - p);
-            size_t sec_start = (size_t)(p - buf);
-            size_t sec_end   = sec_start + para_len;
-            if ((int)para_len <= max_chars) {
-                emit_chunk(buf, sec_start, sec_end, texts_out, max_chunks, &n);
-            } else {
-                sliding_split(buf, sec_start, sec_end, max_chars,
-                              CHUNK_OVERLAP_DEFAULT, fs, fe, nf,
-                              texts_out, max_chunks, &n);
+            size_t para_end_off = para_end ? (size_t)(para_end - buf)
+                                           : (size_t)(end - buf);
+
+            if ((int)(para_end_off - sec_start) > max_chars) {
+                /* Adding this paragraph overflows. Flush accumulated
+                   content first (if any), then decide what to do with
+                   the current paragraph. */
+                size_t flush_to = (size_t)(p - buf);
+                if (flush_to > sec_start) {
+                    emit_chunk(buf, sec_start, flush_to,
+                               texts_out, max_chunks, &n);
+                    sec_start = flush_to;
+                }
+                if ((int)(para_end_off - sec_start) > max_chars) {
+                    /* Single paragraph larger than max_chars: fall back
+                       to sliding split, which finds sentence / space
+                       boundaries inside the long paragraph. */
+                    sliding_split(buf, sec_start, para_end_off, max_chars,
+                                  CHUNK_OVERLAP_DEFAULT, fs, fe, nf,
+                                  texts_out, max_chunks, &n);
+                    sec_start = para_end_off;
+                }
+                /* otherwise the paragraph fits on its own; leave it
+                   accumulating for the next iteration */
             }
+
             p = para_end ? para_end + 2 : end;
         }
+
+        /* final flush of anything still accumulated */
+        if (sec_start < len && n < max_chunks)
+            emit_chunk(buf, sec_start, len, texts_out, max_chunks, &n);
     } else {
         /* markdown: primary split on header lines */
         const char *p = buf;

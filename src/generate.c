@@ -3,15 +3,17 @@
 #include <stdio.h>
 #include "generate.h"
 
-/* forward declarations from gen_anthropic.c / gen_local.c */
+/* forward declarations from gen_anthropic.c / gen_local.c / gen_ollama.c */
 crag_generator_t *gen_anthropic_create(const crag_gen_cfg_t *cfg);
 crag_generator_t *gen_openai_create(const crag_gen_cfg_t *cfg);
 crag_generator_t *gen_local_create(const crag_gen_cfg_t *cfg);
+crag_generator_t *gen_ollama_create(const crag_gen_cfg_t *cfg);
 
 crag_generator_t *generator_create(const crag_gen_cfg_t *cfg) {
     if (!cfg || !cfg->backend) return NULL;
     if (strcmp(cfg->backend, "anthropic") == 0) return gen_anthropic_create(cfg);
     if (strcmp(cfg->backend, "openai")    == 0) return gen_openai_create(cfg);
+    if (strcmp(cfg->backend, "ollama")    == 0) return gen_ollama_create(cfg);
     if (strcmp(cfg->backend, "local")     == 0) return gen_local_create(cfg);
     fprintf(stderr, "generate: unknown backend '%s'\n", cfg->backend);
     return NULL;

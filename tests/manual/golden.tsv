@@ -1,0 +1,36 @@
+# Golden retrieval set for cRAG manual verification.
+# Format: <expected_basename><TAB><query text>
+# Lines starting with # and blank lines are ignored.
+#
+# Queries are grouped by target document and include paraphrases
+# and vocabulary shifts to test retrieval robustness.
+
+# --- pasta_carbonara.md ---
+pasta_carbonara.md	how do you make carbonara without scrambling the eggs
+pasta_carbonara.md	what is the difference between guanciale and pancetta
+pasta_carbonara.md	why is cream not used in authentic carbonara
+pasta_carbonara.md	what cheese goes into carbonara
+
+# --- saturn_rings.md ---
+saturn_rings.md	what are Saturn's rings made of
+saturn_rings.md	how thin are Saturn's rings
+saturn_rings.md	when did Cassini observe Saturn
+saturn_rings.md	what is the Cassini Division
+
+# --- linux_scheduler.md ---
+linux_scheduler.md	how does CFS pick the next task to run
+linux_scheduler.md	what is vruntime
+linux_scheduler.md	what data structure stores runnable tasks in CFS
+linux_scheduler.md	what scheduler replaced CFS in recent kernels
+
+# --- roman_law.md ---
+roman_law.md	what is the Corpus Juris Civilis
+roman_law.md	what were the Twelve Tables
+roman_law.md	difference between ius civile and ius gentium
+roman_law.md	who commissioned the Digest
+
+# --- jazz_history.md ---
+jazz_history.md	who led the bebop movement
+jazz_history.md	what is modal jazz
+jazz_history.md	where did jazz originate
+jazz_history.md	what album launched free jazz

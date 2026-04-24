@@ -1,0 +1,139 @@
+{
+  "timestamp": "20260423T201851Z",
+  "embed_backend": "ollama",
+  "embed_model": "nomic-embed-text",
+  "golden_set": "tests/manual/golden.tsv",
+  "top_k": 5,
+  "totals": {
+    "queries": 20,
+    "hits_at_1": 16,
+    "hits_at_3": 17
+  },
+  "metrics": {
+    "recall_at_1": 0.8000,
+    "recall_at_3": 0.8500,
+    "mrr": 0.8450
+  },
+  "per_query": [
+    {
+      "expected": "pasta_carbonara.md",
+      "query": "how do you make carbonara without scrambling the eggs",
+      "rank": 1,
+      "top_score": 0.649243
+    },
+    {
+      "expected": "pasta_carbonara.md",
+      "query": "what is the difference between guanciale and pancetta",
+      "rank": 1,
+      "top_score": 0.663124
+    },
+    {
+      "expected": "pasta_carbonara.md",
+      "query": "why is cream not used in authentic carbonara",
+      "rank": 1,
+      "top_score": 0.702625
+    },
+    {
+      "expected": "pasta_carbonara.md",
+      "query": "what cheese goes into carbonara",
+      "rank": 1,
+      "top_score": 0.696107
+    },
+    {
+      "expected": "saturn_rings.md",
+      "query": "what are Saturn's rings made of",
+      "rank": 1,
+      "top_score": 0.702487
+    },
+    {
+      "expected": "saturn_rings.md",
+      "query": "how thin are Saturn's rings",
+      "rank": 1,
+      "top_score": 0.719148
+    },
+    {
+      "expected": "saturn_rings.md",
+      "query": "when did Cassini observe Saturn",
+      "rank": 2,
+      "top_score": 0.568499
+    },
+    {
+      "expected": "saturn_rings.md",
+      "query": "what is the Cassini Division",
+      "rank": 0,
+      "top_score": 0.582187
+    },
+    {
+      "expected": "linux_scheduler.md",
+      "query": "how does CFS pick the next task to run",
+      "rank": 1,
+      "top_score": 0.658888
+    },
+    {
+      "expected": "linux_scheduler.md",
+      "query": "what is vruntime",
+      "rank": 1,
+      "top_score": 0.642617
+    },
+    {
+      "expected": "linux_scheduler.md",
+      "query": "what data structure stores runnable tasks in CFS",
+      "rank": 1,
+      "top_score": 0.649316
+    },
+    {
+      "expected": "linux_scheduler.md",
+      "query": "what scheduler replaced CFS in recent kernels",
+      "rank": 1,
+      "top_score": 0.790608
+    },
+    {
+      "expected": "roman_law.md",
+      "query": "what is the Corpus Juris Civilis",
+      "rank": 5,
+      "top_score": 0.600984
+    },
+    {
+      "expected": "roman_law.md",
+      "query": "what were the Twelve Tables",
+      "rank": 5,
+      "top_score": 0.629340
+    },
+    {
+      "expected": "roman_law.md",
+      "query": "difference between ius civile and ius gentium",
+      "rank": 1,
+      "top_score": 0.676579
+    },
+    {
+      "expected": "roman_law.md",
+      "query": "who commissioned the Digest",
+      "rank": 1,
+      "top_score": 0.601532
+    },
+    {
+      "expected": "jazz_history.md",
+      "query": "who led the bebop movement",
+      "rank": 1,
+      "top_score": 0.702901
+    },
+    {
+      "expected": "jazz_history.md",
+      "query": "what is modal jazz",
+      "rank": 1,
+      "top_score": 0.665097
+    },
+    {
+      "expected": "jazz_history.md",
+      "query": "where did jazz originate",
+      "rank": 1,
+      "top_score": 0.727575
+    },
+    {
+      "expected": "jazz_history.md",
+      "query": "what album launched free jazz",
+      "rank": 1,
+      "top_score": 0.736487
+    }
+  ]
+}

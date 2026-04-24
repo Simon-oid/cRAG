@@ -8,7 +8,18 @@
 #include "util.h"
 
 #define DEFAULT_TOP_K 5
-#define RAG_SYSTEM    "You are a helpful assistant. Answer using only the provided context."
+#define DEFAULT_MIN_SCORE 0.60f
+
+#define RAG_SYSTEM \
+    "You are a retrieval-augmented assistant. Answer the user's question " \
+    "strictly from the provided context. Follow these rules without exception:\n" \
+    "1. If the context does not contain enough information to answer, reply " \
+    "exactly: Not in context.\n" \
+    "2. Do not use outside knowledge, even if you know the answer.\n" \
+    "3. Do not invent facts, dates, names, or citations. Do not paraphrase " \
+    "into claims the context does not support.\n" \
+    "4. When the context answers the question, be concise and quote or " \
+    "closely paraphrase the relevant passage."
 
 int cmd_query(int argc, char **argv) {
     const char *query_text = NULL;
@@ -82,6 +93,29 @@ int cmd_query(int argc, char **argv) {
         }
         if (json_out) printf("]\n");
     } else {
+        /* Confidence gate: if top result is below threshold, refuse to
+         * generate. This prevents the model from hallucinating on weakly
+         * matched or out-of-corpus queries. Override with CRAG_GEN_MIN_SCORE.
+         */
+        const char *thresh_env = getenv("CRAG_GEN_MIN_SCORE");
+        float min_score = thresh_env ? (float)atof(thresh_env) : DEFAULT_MIN_SCORE;
+        float top_score = (n > 0) ? scores[0] : 0.0f;
+
+        if (n == 0 || top_score < min_score) {
+            const char *msg = "Not in context.";
+            if (strcmp(format, "json") == 0) {
+                printf("{\"answer\":\"%s\",\"refused\":true,"
+                       "\"top_score\":%.6f,\"min_score\":%.4f}\n",
+                       msg, top_score, min_score);
+            } else {
+                fprintf(stderr,
+                    "query: refusing to generate — top score %.4f below "
+                    "threshold %.4f\n", top_score, min_score);
+                printf("%s\n", msg);
+            }
+            goto cleanup;
+        }
+
         /* build context from results */
         size_t ctx_sz = 1;
         for (int i = 0; i < n; i++) {

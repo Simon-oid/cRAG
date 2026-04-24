@@ -111,6 +111,50 @@ static void test_chunks_are_trimmed(void) {
     unlink(p);
 }
 
+static void test_text_coalesces_short_paragraphs(void) {
+    /* A short plain-text file split into 3 paragraphs by blank lines
+       should produce ONE chunk when the whole file fits in max_chars,
+       not one chunk per paragraph. Previously this was 3 chunks of
+       37/75/310 chars each — too little context for the embedder. */
+    const char *p = "/tmp/crag_test_coalesce.txt";
+    write_file(p,
+        "Documento 1 - Categoria: Architettura\n\n"
+        "Titolo: Approfondimento su Sistema distribuito.\n\n"
+        "Questo documento analizza dati tecnici per Smart City OS "
+        "e performance.\n");
+    char *texts[8] = {0};
+    int n = chunk_file(p, 2048, texts, 8);
+    TEST_ASSERT(n == 1);
+    if (n == 1) {
+        TEST_ASSERT(strstr(texts[0], "Documento 1")       != NULL);
+        TEST_ASSERT(strstr(texts[0], "Titolo")            != NULL);
+        TEST_ASSERT(strstr(texts[0], "Smart City OS")     != NULL);
+    }
+    free_chunks(texts, n);
+    unlink(p);
+}
+
+static void test_text_splits_when_paragraphs_exceed_max(void) {
+    /* Two substantial paragraphs together exceed max_chars → 2 chunks,
+       split at the paragraph boundary (not mid-sentence). */
+    const char *p = "/tmp/crag_test_coalesce_split.txt";
+    char para[801];
+    for (int i = 0; i < 800; i++) para[i] = (i % 80 == 79) ? ' ' : 'x';
+    para[800] = '\0';
+
+    FILE *f = fopen(p, "w");
+    TEST_ASSERT(f != NULL);
+    fputs(para, f); fputs("\n\n", f);
+    fputs(para, f); fputs("\n", f);
+    fclose(f);
+
+    char *texts[8] = {0};
+    int n = chunk_file(p, 1000, texts, 8);
+    TEST_ASSERT(n == 2);
+    free_chunks(texts, n);
+    unlink(p);
+}
+
 static void test_respects_max_chunks_cap(void) {
     const char *p = "/tmp/crag_test_cap.md";
     char big[8192];
@@ -134,6 +178,8 @@ int main(void) {
     TEST_RUN(test_code_fence_is_not_header);
     TEST_RUN(test_large_paragraph_forces_sliding_split);
     TEST_RUN(test_chunks_are_trimmed);
+    TEST_RUN(test_text_coalesces_short_paragraphs);
+    TEST_RUN(test_text_splits_when_paragraphs_exceed_max);
     TEST_RUN(test_respects_max_chunks_cap);
     TEST_DONE();
 }

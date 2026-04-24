@@ -4,7 +4,7 @@
 typedef struct crag_generator crag_generator_t;
 
 typedef struct {
-    const char *backend;    /* "anthropic" | "openai" | "local" */
+    const char *backend;    /* "anthropic" | "openai" | "ollama" | "local" */
     const char *url;
     const char *model;
     const char *api_key;
