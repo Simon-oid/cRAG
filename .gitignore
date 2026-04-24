@@ -17,3 +17,6 @@ tests/test_util
 
 # Editor / tool state
 .claude/
+
+# Personal working notes
+todo.md
