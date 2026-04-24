@@ -19,6 +19,19 @@ int  store_commit(crag_store_t *s);
 /* Returns number of results (<=k). results[] and scores[] must be pre-allocated to k. */
 int  store_search(crag_store_t *s, const float *qvec, int dim, int k,
                   crag_chunk_t *results, float *scores);
+/* BM25 full-text search over chunks.text via FTS5. `qtext` is the raw user
+   query; it's sanitized internally (non-token chars stripped, tokens quoted
+   and ORed). Scores returned are BM25 values (higher = better match; note
+   SQLite reports BM25 as negative internally, we negate for convenience). */
+int  store_search_bm25(crag_store_t *s, const char *qtext, int k,
+                       crag_chunk_t *results, float *scores);
+/* Hybrid search: fuses cosine and BM25 via Reciprocal Rank Fusion. Scores
+   are fusion scores (sum of 1/(RRF_K + rank_i) across retrievers). Each
+   underlying retriever pulls max(k*4, 20) candidates before fusion. */
+int  store_search_hybrid(crag_store_t *s,
+                         const float *qvec, int dim,
+                         const char *qtext, int k,
+                         crag_chunk_t *results, float *scores);
 int  store_stats(crag_store_t *s, crag_store_stats_t *out);
 void store_close(crag_store_t *s);
 

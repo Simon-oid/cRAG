@@ -282,6 +282,163 @@ static void test_file_touch_updates_indexed_at(void) {
     cleanup_db(p);
 }
 
+static void test_bm25_retrieves_lexical_match(void) {
+    const char *p = "/tmp/crag_test_store_bm25.db";
+    cleanup_db(p);
+    crag_store_t s;
+    TEST_ASSERT(store_open(p, &s) == 0);
+
+    /* Seed three docs. Only the first contains the exact word "gnupg".
+       The embedding vectors are all zero — cosine alone can't tell them
+       apart, so this test isolates the BM25 path. */
+    crag_chunk_t c = {0};
+    c.dim = 4;
+    c.source = "gpg.md";  c.text = "GnuPG signs and verifies messages";
+    TEST_ASSERT(store_insert(&s, &c) == 0);
+    c.source = "sq.md";   c.text = "Sequoia is a modern OpenPGP library";
+    TEST_ASSERT(store_insert(&s, &c) == 0);
+    c.source = "img.md";  c.text = "Cats napping in the sunshine";
+    TEST_ASSERT(store_insert(&s, &c) == 0);
+
+    crag_chunk_t results[3] = {0};
+    float scores[3] = {0};
+    int n = store_search_bm25(&s, "gnupg signing", 3, results, scores);
+    TEST_ASSERT(n >= 1);
+    TEST_ASSERT(strcmp(results[0].source, "gpg.md") == 0);
+    TEST_ASSERT(scores[0] > 0.0f);  /* negated bm25: higher = better */
+
+    for (int i = 0; i < n; i++) free_result_row(&results[i]);
+    store_close(&s);
+    cleanup_db(p);
+}
+
+static void test_bm25_empty_query_returns_zero(void) {
+    const char *p = "/tmp/crag_test_store_bm25_empty.db";
+    cleanup_db(p);
+    crag_store_t s;
+    TEST_ASSERT(store_open(p, &s) == 0);
+
+    crag_chunk_t c = {0};
+    c.dim = 2; c.source = "a.md"; c.text = "hello"; c.vec[0] = 1.0f;
+    TEST_ASSERT(store_insert(&s, &c) == 0);
+
+    crag_chunk_t results[3] = {0};
+    float scores[3] = {0};
+    /* All-punctuation → no usable tokens → 0 hits (not an error). */
+    TEST_ASSERT(store_search_bm25(&s, "??? !!! ***", 3, results, scores) == 0);
+    /* NULL is safe too. */
+    TEST_ASSERT(store_search_bm25(&s, NULL, 3, results, scores) == 0);
+
+    store_close(&s);
+    cleanup_db(p);
+}
+
+static void test_hybrid_fuses_both_retrievers(void) {
+    const char *p = "/tmp/crag_test_store_hybrid.db";
+    cleanup_db(p);
+    crag_store_t s;
+    TEST_ASSERT(store_open(p, &s) == 0);
+
+    /* Three docs with distinct vectors:
+         vecA = (1,0,0,0), text: "alpha bravo"  -> cosine wins on vecA
+         vecB = (0,1,0,0), text: "charlie delta" -> cosine near-miss
+         vecC = (0,0,1,0), text: "alpha echo"   -> BM25 also hits "alpha" */
+    crag_chunk_t c = {0};
+    c.dim = 4;
+    c.source = "A.md"; c.text = "alpha bravo";
+    memset(c.vec, 0, sizeof c.vec); c.vec[0] = 1.0f;
+    TEST_ASSERT(store_insert(&s, &c) == 0);
+    c.source = "B.md"; c.text = "charlie delta";
+    memset(c.vec, 0, sizeof c.vec); c.vec[1] = 1.0f;
+    TEST_ASSERT(store_insert(&s, &c) == 0);
+    c.source = "C.md"; c.text = "alpha echo";
+    memset(c.vec, 0, sizeof c.vec); c.vec[2] = 1.0f;
+    TEST_ASSERT(store_insert(&s, &c) == 0);
+
+    /* Query vector aligns with A exactly. Query text contains "alpha",
+       which matches both A and C via BM25. Hybrid top-1 should still be
+       A (high cosine + BM25 hit), but C should beat B overall because
+       BM25 lifts C while B has zero lexical signal. */
+    float qvec[4] = {1.0f, 0, 0, 0};
+    crag_chunk_t results[3] = {0};
+    float scores[3] = {0};
+    int n = store_search_hybrid(&s, qvec, 4, "alpha", 3, results, scores);
+    TEST_ASSERT(n == 3);
+    TEST_ASSERT(strcmp(results[0].source, "A.md") == 0);
+    /* scores come from RRF fusion → positive, and monotonically decreasing */
+    TEST_ASSERT(scores[0] > 0.0f);
+    TEST_ASSERT(scores[0] >= scores[1]);
+    TEST_ASSERT(scores[1] >= scores[2]);
+    /* C must rank higher than B (it got a BM25 boost that B didn't). */
+    int rank_b = -1, rank_c = -1;
+    for (int i = 0; i < n; i++) {
+        if (strcmp(results[i].source, "B.md") == 0) rank_b = i;
+        if (strcmp(results[i].source, "C.md") == 0) rank_c = i;
+    }
+    TEST_ASSERT(rank_c >= 0);
+    TEST_ASSERT(rank_b >= 0);
+    TEST_ASSERT(rank_c < rank_b);
+
+    for (int i = 0; i < n; i++) free_result_row(&results[i]);
+    store_close(&s);
+    cleanup_db(p);
+}
+
+static void test_hybrid_dedupes_shared_results(void) {
+    /* If cosine and BM25 both return the same chunk at rank 1, hybrid must
+       not emit it twice. Also verifies RRF boost (sum of contributions). */
+    const char *p = "/tmp/crag_test_store_hybrid_dedupe.db";
+    cleanup_db(p);
+    crag_store_t s;
+    TEST_ASSERT(store_open(p, &s) == 0);
+
+    crag_chunk_t c = {0};
+    c.dim = 2; c.source = "only.md"; c.text = "unique token"; c.vec[0] = 1.0f;
+    TEST_ASSERT(store_insert(&s, &c) == 0);
+
+    float qvec[2] = {1.0f, 0};
+    crag_chunk_t results[3] = {0};
+    float scores[3] = {0};
+    int n = store_search_hybrid(&s, qvec, 2, "unique", 3, results, scores);
+    TEST_ASSERT(n == 1);  /* dedup to a single unique doc */
+    TEST_ASSERT(strcmp(results[0].source, "only.md") == 0);
+    /* Present in both retrievers at rank 1 → RRF = 2 * 1/61 ≈ 0.0328 */
+    TEST_ASSERT(scores[0] > 0.03f && scores[0] < 0.04f);
+
+    for (int i = 0; i < n; i++) free_result_row(&results[i]);
+    store_close(&s);
+    cleanup_db(p);
+}
+
+static void test_delete_chunks_for_updates_fts(void) {
+    /* The chunks_ad trigger must keep FTS in sync so a deleted chunk is
+       not returned by BM25. Without the trigger this would silently leak. */
+    const char *p = "/tmp/crag_test_store_fts_sync.db";
+    cleanup_db(p);
+    crag_store_t s;
+    TEST_ASSERT(store_open(p, &s) == 0);
+
+    crag_chunk_t c = {0};
+    c.dim = 2; c.vec[0] = 1.0f;
+    c.source = "del.md"; c.text = "quokka sunrise";
+    TEST_ASSERT(store_insert(&s, &c) == 0);
+    c.source = "keep.md"; c.text = "koala dinner";
+    TEST_ASSERT(store_insert(&s, &c) == 0);
+
+    /* Sanity: BM25 finds "quokka" initially. */
+    crag_chunk_t r[2] = {0}; float sc[2] = {0};
+    TEST_ASSERT(store_search_bm25(&s, "quokka", 2, r, sc) == 1);
+    for (int i = 0; i < 1; i++) free_result_row(&r[i]);
+
+    /* Delete "del.md"; BM25 should now return 0 hits for "quokka". */
+    TEST_ASSERT(store_delete_chunks_for(&s, "del.md") == 0);
+    memset(r, 0, sizeof r); memset(sc, 0, sizeof sc);
+    TEST_ASSERT(store_search_bm25(&s, "quokka", 2, r, sc) == 0);
+
+    store_close(&s);
+    cleanup_db(p);
+}
+
 int main(void) {
     fprintf(stderr, "test_store:\n");
     TEST_RUN(test_open_and_close);
@@ -295,5 +452,10 @@ int main(void) {
     TEST_RUN(test_delete_chunks_for);
     TEST_RUN(test_sweep_missing_clears_stale);
     TEST_RUN(test_file_touch_updates_indexed_at);
+    TEST_RUN(test_bm25_retrieves_lexical_match);
+    TEST_RUN(test_bm25_empty_query_returns_zero);
+    TEST_RUN(test_hybrid_fuses_both_retrievers);
+    TEST_RUN(test_hybrid_dedupes_shared_results);
+    TEST_RUN(test_delete_chunks_for_updates_fts);
     TEST_DONE();
 }

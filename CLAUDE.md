@@ -22,7 +22,7 @@ Run a single test binary directly after `make test`:
 
 `test_retrieval` uses a small in-test hashed bag-of-words embedder to keep the suite pure C and offline; it verifies topic queries retrieve the correct document.
 
-Dependencies: `libcurl`, `libm`, `libpthread`, `libdl`. SQLite3 is vendored in `third_party/` and compiled with `SQLITE_THREADSAFE=0` and WAL mode.
+Dependencies: `libcurl`, `libm`, `libpthread`, `libdl`. SQLite3 is vendored in `third_party/` and compiled with `SQLITE_THREADSAFE=0`, WAL mode, and `SQLITE_ENABLE_FTS5`.
 
 ## Architecture
 
@@ -32,15 +32,15 @@ The pipeline has five stages, each in its own module:
 
 2. **Embedding** (`src/embed*.c`) — Plugin architecture via `embed_backend_t` vtable (`embed_one`, `embed_many`). Three backends: `openai` (text-embedding-3-small), `ollama`, `local` (stub). Batches up to 256 items per API call.
 
-3. **Store** (`src/store.c`) — SQLite-backed vector database. Chunks stored as BLOBs with source path and text. All chunks in a single database must share the same vector dimension (enforced at search time).
+3. **Store** (`src/store.c`) — SQLite-backed vector database. Chunks stored as BLOBs with source path and text; an FTS5 virtual table (`chunks_fts`) shadows `chunks.text` via triggers for lexical search. A `files` table (path, mtime, size, indexed_at) drives incremental reindex. All chunks in a single database must share the same vector dimension.
 
-4. **Search** (`src/search.c`) — Cosine similarity only. Top-K selection via in-memory insertion sort after a full table scan.
+4. **Search** (`src/search.c`, `src/store.c`) — Three modes: cosine (in-memory insertion sort after full vector scan), BM25 (FTS5), and hybrid (Reciprocal Rank Fusion with k=60 blending cosine and BM25 pools). Default mode is `hybrid`.
 
 5. **Generation** (`src/generate.c`, `src/gen_*.c`) — Plugin architecture via vtable. Backends: `anthropic` (Claude, default `claude-sonnet-4-6`), `openai`, `local`. Accepts system prompt + user prompt, returns allocated string.
 
-**Index data flow:** `nftw()` walk → `chunk_file()` → `embed_many()` (batched) → `store_insert()` in transaction → `store_commit()`
+**Index data flow:** `nftw()` walk → `store_file_is_current()` check (skip unchanged) → `chunk_file()` → `embed_many()` (batched) → `store_insert()` in transaction → `store_commit()`. After the walk, `store_sweep_missing()` deletes rows for files no longer on disk. `--force` bypasses the skip check.
 
-**Query data flow:** `embed_one(query)` → `store_search()` cosine scan → top-K chunks → optionally `generator_run()` → text or JSON output
+**Query data flow:** `embed_one(query)` (skipped in bm25 mode) → `store_search_{cosine,bm25,hybrid}()` → top-K chunks → optionally `generator_run()` → text or JSON output. The confidence gate (`CRAG_GEN_MIN_SCORE`) is only active in cosine mode since BM25/RRF scores use a different scale.
 
 ## Key Design Constraints
 

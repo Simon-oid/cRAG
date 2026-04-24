@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # Level 2: compute recall@1, recall@3, and MRR over the golden set.
 #
-# Usage: tests/manual/recall.sh [backend] [golden_tsv]
-#   backend    ollama (default) | openai | local
-#   golden_tsv path to a TSV file (default: tests/manual/golden.tsv)
+# Usage: tests/manual/recall.sh [backend] [golden_tsv] [search_mode]
+#   backend      ollama (default) | openai | local
+#   golden_tsv   path to a TSV file (default: tests/manual/golden.tsv)
+#   search_mode  cosine | bm25 | hybrid (default: hybrid — matches crag default)
 #
 # Environment:
 #   CRAG_EMBED_MODEL   override embedding model name (recorded in history)
 #   CRAG_SAVE_HISTORY  when "1", writes a JSON snapshot to
-#                      tests/manual/history/<timestamp>-<model>.json
+#                      tests/manual/history/<timestamp>-<model>-<search>.json
 #
 # The script prints per-query rank plus a summary. Failures are listed
 # at the bottom for easy inspection.
@@ -19,6 +20,7 @@ cd "$(dirname "$0")/../.."
 
 BACKEND="${1:-ollama}"
 GOLDEN="${2:-tests/manual/golden.tsv}"
+SEARCH="${3:-hybrid}"
 DB="/tmp/crag_manual_recall.db"
 CORPUS="tests/manual/corpus"
 CRAG="./crag"
@@ -34,6 +36,7 @@ fi
 
 echo "${C_BOLD}=== cRAG golden recall test ===${C_RST}"
 echo "backend: ${C_CYN}${BACKEND}${C_RST}"
+echo "search:  ${C_CYN}${SEARCH}${C_RST}"
 echo "golden:  ${GOLDEN}"
 echo "top-k:   ${TOP_K}"
 echo
@@ -64,7 +67,7 @@ while IFS=$'\t' read -r expected query; do
     TOTAL=$((TOTAL+1))
 
     json="$(CRAG_EMBED_BACKEND="${BACKEND}" "${CRAG}" query "${query}" \
-            --db "${DB}" -k ${TOP_K} --format json 2>/dev/null || true)"
+            --db "${DB}" -k ${TOP_K} --search "${SEARCH}" --format json 2>/dev/null || true)"
 
     top_score="$(echo "${json}" | jq -r '.[0].score // 0' 2>/dev/null || echo 0)"
 
@@ -141,7 +144,7 @@ if [ "${CRAG_SAVE_HISTORY:-0}" = "1" ]; then
     # sanitize model tag for filename: replace : and / with -
     safe_tag="$(echo "${model_tag}" | tr ':/' '--')"
     ts="$(date -u +%Y%m%dT%H%M%SZ)"
-    hist_file="${hist_dir}/${ts}-${BACKEND}-${safe_tag}.json"
+    hist_file="${hist_dir}/${ts}-${BACKEND}-${safe_tag}-${SEARCH}.json"
 
     # Build the per_query JSON array with jq so strings are safely escaped.
     per_query="$(

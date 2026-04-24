@@ -27,6 +27,7 @@ int cmd_query(int argc, char **argv) {
     const char *db_path    = NULL;
     const char *url        = NULL;
     const char *format     = "text";
+    const char *search     = "hybrid";  /* hybrid default: uses cosine + BM25 */
     int top_k  = DEFAULT_TOP_K;
     int do_gen = 0;
 
@@ -38,6 +39,7 @@ int cmd_query(int argc, char **argv) {
         else if (strcmp(argv[i], "--top-k")    == 0 && i+1 < argc) top_k      = atoi(argv[++i]);
         else if (strcmp(argv[i], "-k")         == 0 && i+1 < argc) top_k      = atoi(argv[++i]);
         else if (strcmp(argv[i], "--format")   == 0 && i+1 < argc) format     = argv[++i];
+        else if (strcmp(argv[i], "--search")   == 0 && i+1 < argc) search     = argv[++i];
         else if (strcmp(argv[i], "--generate") == 0) do_gen = 1;
         else if (argv[i][0] != '-') query_text = argv[i];
     }
@@ -47,31 +49,50 @@ int cmd_query(int argc, char **argv) {
         fprintf(stderr, "query: invalid --top-k (must be 1..1000)\n");
         return 2;
     }
+    int mode_cosine = strcmp(search, "cosine") == 0;
+    int mode_bm25   = strcmp(search, "bm25")   == 0;
+    int mode_hybrid = strcmp(search, "hybrid") == 0;
+    if (!mode_cosine && !mode_bm25 && !mode_hybrid) {
+        fprintf(stderr, "query: invalid --search '%s' (cosine|bm25|hybrid)\n", search);
+        return 2;
+    }
     if (!db_path) db_path = getenv("CRAG_DB");
     if (!db_path) db_path = "./crag.db";
 
-    crag_embed_backend_t *emb = embed_backend_create(backend, url, NULL);
-    if (!emb) return 1;
-
+    /* BM25-only mode never needs to embed the query. */
+    crag_embed_backend_t *emb = NULL;
     crag_chunk_t qchunk = {0};
-    if (emb->embed_one(query_text, qchunk.vec, &qchunk.dim, emb->ctx) != 0) {
-        fprintf(stderr, "query: embedding failed\n");
-        embed_backend_free(emb);
-        return 4;
+    if (!mode_bm25) {
+        emb = embed_backend_create(backend, url, NULL);
+        if (!emb) return 1;
+        if (emb->embed_one(query_text, qchunk.vec, &qchunk.dim, emb->ctx) != 0) {
+            fprintf(stderr, "query: embedding failed\n");
+            embed_backend_free(emb);
+            return 4;
+        }
     }
 
     crag_store_t store;
-    if (store_open(db_path, &store) != 0) { embed_backend_free(emb); return 3; }
+    if (store_open(db_path, &store) != 0) {
+        if (emb) embed_backend_free(emb);
+        return 3;
+    }
 
     crag_chunk_t *results = calloc((size_t)top_k, sizeof(crag_chunk_t));
     float        *scores  = calloc((size_t)top_k, sizeof(float));
     if (!results || !scores) {
         free(results); free(scores);
-        store_close(&store); embed_backend_free(emb);
+        store_close(&store);
+        if (emb) embed_backend_free(emb);
         return 1;
     }
 
-    int n = store_search(&store, qchunk.vec, qchunk.dim, top_k, results, scores);
+    int n;
+    if (mode_cosine)      n = store_search(&store, qchunk.vec, qchunk.dim, top_k, results, scores);
+    else if (mode_bm25)   n = store_search_bm25(&store, query_text, top_k, results, scores);
+    else                  n = store_search_hybrid(&store, qchunk.vec, qchunk.dim,
+                                                  query_text, top_k, results, scores);
+    if (n < 0) n = 0;
 
     int rc = 0;
     if (!do_gen) {
@@ -93,15 +114,17 @@ int cmd_query(int argc, char **argv) {
         }
         if (json_out) printf("]\n");
     } else {
-        /* Confidence gate: if top result is below threshold, refuse to
-         * generate. This prevents the model from hallucinating on weakly
-         * matched or out-of-corpus queries. Override with CRAG_GEN_MIN_SCORE.
+        /* Confidence gate: only meaningful in cosine mode because BM25 and
+         * RRF scores live on different scales. For bm25/hybrid we fall back
+         * to "refuse iff zero results" and rely on the RAG_SYSTEM prompt to
+         * catch off-topic context. Override threshold via CRAG_GEN_MIN_SCORE.
          */
         const char *thresh_env = getenv("CRAG_GEN_MIN_SCORE");
         float min_score = thresh_env ? (float)atof(thresh_env) : DEFAULT_MIN_SCORE;
         float top_score = (n > 0) ? scores[0] : 0.0f;
+        int   gate_active = mode_cosine;
 
-        if (n == 0 || top_score < min_score) {
+        if (n == 0 || (gate_active && top_score < min_score)) {
             const char *msg = "Not in context.";
             if (strcmp(format, "json") == 0) {
                 printf("{\"answer\":\"%s\",\"refused\":true,"

@@ -27,6 +27,7 @@ src/%.o: src/%.c
 
 third_party/sqlite3.o: third_party/sqlite3.c
 	$(CC) -O2 -w -Ithird_party -DSQLITE_THREADSAFE=0 -DSQLITE_DEFAULT_WAL_SYNCHRONOUS=1 \
+	      -DSQLITE_ENABLE_FTS5 \
 	      -c -o $@ $<
 
 tests/%: tests/%.c $(filter-out src/main.o, $(OBJ)) $(SQLITE_OBJ)
