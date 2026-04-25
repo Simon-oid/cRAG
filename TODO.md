@@ -52,16 +52,15 @@ a finished project. Ship these before MCP.
   the modern array shape; query returned ranked results.
 - Docs were stale, calling it a stub. CLAUDE.md fixed.
 
-### 1.4 README.md
-- **Why:** There's no README. For a portfolio piece, the GitHub
-  landing page is the entire first impression.
-- **Shape:** One page covering: what cRAG is, `make && ./crag`,
-  five-minute quickstart (index + query + generate), backend matrix,
-  link to `docs/research/study.md` for the deep dive. Keep it
-  focused — CLAUDE.md and study.md already carry the heavy weight.
-- **Watchouts:** Don't duplicate what's in CLAUDE.md. README is for
-  readers deciding whether to read further; CLAUDE.md is for
-  collaborators.
+### 1.4 README.md — DONE
+- One-page landing covering: what cRAG is, build/test, five-minute
+  Ollama quickstart (index + query + generate), backend matrix
+  (local/ollama/openai/anthropic), three search modes, indexing
+  guarantees (markdown-aware, incremental, interrupt-safe, parallel),
+  Run 3 numbers headline table, layout, status, MIT.
+- Linked to `docs/benchmarks.md`, `CLAUDE.md`, `TODO.md`, `LICENSE`.
+  Did **not** link to `docs/research/study.md` — that path is in
+  `.gitignore` and not visible to GitHub readers.
 
 ### 1.5 Re-benchmark `/usr/share/doc` with hybrid + incremental — DONE
 - Re-ran the cold rebuild against `b636f96` with `--workers 4` and md
@@ -80,14 +79,18 @@ a finished project. Ship these before MCP.
   Added as a Tier 2 candidate (extension-less doc filenames).
 - `docs/benchmarks.md` now has a Run 3 section with all the above.
 
-### 1.6 Update `docs/research/study.md` §8
-- **Why:** §8 still lists incremental reindex and hybrid retrieval as
-  "future work." They're done.
-- **Shape:** Mark done items, add short notes on the chosen design
-  (FTS5 external-content + RRF k=60; files table + mtime/size), and
-  add new future-work entries for whatever Tier 2/3 items remain
-  after Tier 1.
-- **Quick win — do this last,** right before calling cRAG complete.
+### 1.6 Update `docs/research/study.md` §8 — DONE
+- §8 split into 8.1 (Shipped since the original draft), 8.2 (Still
+  open), 8.3 (Phase 2 — MCP wrapper).
+- 8.1 covers incremental reindex, hybrid retrieval, parallel
+  indexing, and md coalesce — each with the design choice that
+  actually shipped (RRF k=60 not α-weighted, files table with
+  mtime+size, pthread pool around `embed_one` with split fan-out,
+  header-section coalesce mirroring the plain-text pass).
+- 8.2 lists the remaining open items: ANN/HNSW, PDF/HTML, Windows,
+  the `--ext` whitelist gap, the two pathological files, FTS
+  tokenizer, snippet highlighting.
+- TOC updated to surface the new subsections.
 
 ## Tier 2 — polish
 
