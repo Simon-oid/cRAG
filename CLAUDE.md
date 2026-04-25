@@ -48,7 +48,7 @@ The pipeline has five stages, each in its own module:
 - All HTTP via `libcurl` (`src/http.c`).
 - SQLite is single-threaded — `SQLITE_THREADSAFE=0`; only the main thread may call into the store. The `--workers N` index pool only parallelises `embed_one`; inserts stay on the main thread.
 - Manual `malloc`/`free` throughout; caller owns returned memory.
-- The `local` embedding backend is a stub (returns zeros); real implementation needed.
+- The `local` embedding backend talks to llama.cpp's `/embedding` endpoint (default `http://localhost:8080/embedding`); override with `CRAG_EMBED_URL`.
 - Negative return values are error codes (`crag_err_t` in `include/crag.h`).
 
 ## Environment Variables

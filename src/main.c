@@ -62,7 +62,7 @@ static void usage(const char *prog) {
     fprintf(stderr, "  stats        [--db path]\n");
     fprintf(stderr, "\nenv vars:\n");
     fprintf(stderr, "  CRAG_DB              default db path\n");
-    fprintf(stderr, "  CRAG_EMBED_BACKEND   local|openai (default: local)\n");
+    fprintf(stderr, "  CRAG_EMBED_BACKEND   local|openai|ollama (default: local)\n");
     fprintf(stderr, "  CRAG_EMBED_URL       embedding endpoint\n");
     fprintf(stderr, "  OPENAI_API_KEY       for openai backend\n");
     fprintf(stderr, "  CRAG_GEN_BACKEND     anthropic|openai|ollama|local (default: local)\n");

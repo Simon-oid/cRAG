@@ -39,19 +39,18 @@ a finished project. Ship these before MCP.
 - **Success criterion:** New test green; existing retrieval quality
   on rag-test-data unchanged.
 
-### 1.3 Real implementation of `local` embedding backend
-- **Why:** `embed_local.c` is advertised as a backend but currently
-  returns zeros (stub). It's listed in `--backend` help. Either make
-  it work or remove it.
-- **Shape:** Two options:
-  - (a) Implement: talk to llama.cpp's `/embedding` endpoint. The
-    original `project_rag_mcp` memo called for this.
-  - (b) Remove: drop `embed_local.c` from the build and backends list;
-    users who want local can use `ollama`.
-- **Recommendation:** (a) is more interesting and matches the
-  original plan. About 40 lines of HTTP JSON handling.
-- **Success criterion:** `CRAG_EMBED_BACKEND=local` end-to-end round
-  trip against a running `llama-server --embedding`.
+### 1.3 Real implementation of `local` embedding backend — DONE
+- Already shipped in `a4c9052`. `src/embed_local.c` POSTs
+  `{"content":"..."}` to llama.cpp's `/embedding` endpoint and pulls
+  the `embedding` floats out of the response with
+  `json_extract_floats`. Default URL is
+  `http://localhost:8080/embedding`; override via `CRAG_EMBED_URL`.
+- Verified: parser handles all three llama.cpp response shapes
+  (legacy `{"embedding":[…]}`, modern `[{"embedding":[…]}]`, and
+  OpenAI-compat `{"data":[{"embedding":[…]}]}`). End-to-end indexed
+  `tests/manual/corpus` (10 chunks) against a mock server returning
+  the modern array shape; query returned ranked results.
+- Docs were stale, calling it a stub. CLAUDE.md fixed.
 
 ### 1.4 README.md
 - **Why:** There's no README. For a portfolio piece, the GitHub
@@ -163,6 +162,10 @@ None of these block MCP.
   `--search cosine|bm25|hybrid` (`ba5f717`).
 - Parallel indexing: pthread embed pool with CRAG_ECONTEXT splits also
   fanned through the pool, `--workers N` (default 1).
+- Markdown chunker coalescing: short md files no longer fragment
+  per-header; large ones still split at header boundaries.
+- Local embedding backend already wired to llama.cpp `/embedding`
+  in the MVP commit; verified end-to-end.
 
 ## Phase 2 (out of scope until Tier 1 is clear)
 
