@@ -38,7 +38,7 @@ The pipeline has five stages, each in its own module:
 
 5. **Generation** (`src/generate.c`, `src/gen_*.c`) — Plugin architecture via vtable. Backends: `anthropic` (Claude, default `claude-sonnet-4-6`), `openai`, `local`. Accepts system prompt + user prompt, returns allocated string.
 
-**Index data flow:** `nftw()` walk → `store_file_is_current()` check (skip unchanged) → `chunk_file()` → `embed_many()` (batched) → `store_insert()` in transaction → `store_commit()`. After the walk, `store_sweep_missing()` deletes rows for files no longer on disk. `--force` bypasses the skip check.
+**Index data flow:** `nftw()` walk → `store_file_is_current()` check (skip unchanged) → `chunk_file()` → `embed_many()` (batched) → `store_insert()` in transaction → `store_commit()`. After the walk, `store_sweep_missing()` deletes rows for files no longer on disk. `--force` bypasses the skip check. `--workers N` (default 1) spins up an in-process pthread pool around `embed_one`; only engaged when the backend has no native batch path (e.g. ollama). The pool also handles the recursive `CRAG_ECONTEXT` splits, so the split halves benefit from worker parallelism too. SQLite stays single-threaded — only the main thread calls `store_insert`.
 
 **Query data flow:** `embed_one(query)` (skipped in bm25 mode) → `store_search_{cosine,bm25,hybrid}()` → top-K chunks → optionally `generator_run()` → text or JSON output. The confidence gate (`CRAG_GEN_MIN_SCORE`) is only active in cosine mode since BM25/RRF scores use a different scale.
 
@@ -46,7 +46,7 @@ The pipeline has five stages, each in its own module:
 
 - Pure C11, no C++ or external JSON libraries. JSON is hand-parsed in `src/util.c`.
 - All HTTP via `libcurl` (`src/http.c`).
-- Single-threaded — `SQLITE_THREADSAFE=0`; do not add concurrent store access.
+- SQLite is single-threaded — `SQLITE_THREADSAFE=0`; only the main thread may call into the store. The `--workers N` index pool only parallelises `embed_one`; inserts stay on the main thread.
 - Manual `malloc`/`free` throughout; caller owns returned memory.
 - The `local` embedding backend is a stub (returns zeros); real implementation needed.
 - Negative return values are error codes (`crag_err_t` in `include/crag.h`).
