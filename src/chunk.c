@@ -200,26 +200,59 @@ int chunk_file(const char *path, int max_chars,
         if (sec_start < len && n < max_chunks)
             emit_chunk(buf, sec_start, len, texts_out, max_chunks, &n);
     } else {
-        /* markdown: primary split on header lines */
+        /* Markdown: walk header sections, coalesce consecutive ones into a
+           single chunk until adding the next would overflow max_chars.
+           Mirror of the plain-text coalesce above — without it, short
+           READMEs split into one chunk per header even when the whole file
+           fits, starving the embedder of context. Long single sections
+           still fall back to sliding_split so we don't blow past the limit. */
         const char *p = buf;
         const char *end = buf + len;
-        size_t sec_start = 0;
+        size_t sec_start = 0;       /* start of currently accumulating chunk */
+        size_t safe_end  = 0;       /* last header boundary at which the
+                                       accumulated chunk still fits */
 
-        while (p <= end) {
+        while (p <= end && n < max_chunks) {
             int is_header = (p < end) && !in_fence_range((size_t)(p - buf), fs, fe, nf)
                             && is_md_header(p);
             int is_end = (p == end);
 
-            if ((is_header || is_end) && p > buf) {
-                size_t sec_end = (size_t)(p - buf);
-                if ((int)(sec_end - sec_start) <= max_chars) {
-                    emit_chunk(buf, sec_start, sec_end, texts_out, max_chunks, &n);
+            if ((is_header || is_end) && (size_t)(p - buf) > sec_start) {
+                size_t cand = (size_t)(p - buf);
+                if ((int)(cand - sec_start) <= max_chars) {
+                    /* still fits — extend the safe boundary, keep going */
+                    safe_end = cand;
+                    if (is_end) {
+                        emit_chunk(buf, sec_start, safe_end,
+                                   texts_out, max_chunks, &n);
+                        break;
+                    }
                 } else {
-                    sliding_split(buf, sec_start, sec_end, max_chars,
-                                  CHUNK_OVERLAP_DEFAULT, fs, fe, nf,
-                                  texts_out, max_chunks, &n);
+                    /* adding this section would overflow. Flush whatever
+                       fit so far, then reconsider the new section alone. */
+                    if (safe_end > sec_start) {
+                        emit_chunk(buf, sec_start, safe_end,
+                                   texts_out, max_chunks, &n);
+                        sec_start = safe_end;
+                    }
+                    if ((int)(cand - sec_start) <= max_chars) {
+                        /* the new section alone fits — start accumulating */
+                        safe_end = cand;
+                        if (is_end) {
+                            emit_chunk(buf, sec_start, safe_end,
+                                       texts_out, max_chunks, &n);
+                            break;
+                        }
+                    } else {
+                        /* one section is itself bigger than max_chars */
+                        sliding_split(buf, sec_start, cand, max_chars,
+                                      CHUNK_OVERLAP_DEFAULT, fs, fe, nf,
+                                      texts_out, max_chunks, &n);
+                        sec_start = cand;
+                        safe_end  = cand;
+                        if (is_end) break;
+                    }
                 }
-                sec_start = (size_t)(p - buf);
             }
 
             if (is_end) break;

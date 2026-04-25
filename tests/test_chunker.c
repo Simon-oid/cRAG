@@ -33,8 +33,11 @@ static void test_empty_file_produces_zero_chunks(void) {
     unlink(p);
 }
 
-static void test_markdown_splits_on_headers(void) {
-    const char *p = "/tmp/crag_test_md_headers.md";
+static void test_markdown_coalesces_short_sections(void) {
+    /* Mirror of the plain-text coalesce: a short md file with multiple
+       headers should land in one chunk if the whole file fits. Without
+       this, READMEs fragmented per-header even at 70 bytes total. */
+    const char *p = "/tmp/crag_test_md_coalesce.md";
     write_file(p,
         "# One\n"
         "alpha alpha\n\n"
@@ -44,12 +47,43 @@ static void test_markdown_splits_on_headers(void) {
         "gamma gamma\n");
     char *texts[8] = {0};
     int n = chunk_file(p, 2048, texts, 8);
-    TEST_ASSERT(n == 3);
-    if (n == 3) {
-        TEST_ASSERT(strstr(texts[0], "# One")   != NULL);
-        TEST_ASSERT(strstr(texts[0], "alpha")   != NULL);
-        TEST_ASSERT(strstr(texts[1], "## Two")  != NULL);
-        TEST_ASSERT(strstr(texts[2], "### Three") != NULL);
+    TEST_ASSERT(n == 1);
+    if (n == 1) {
+        TEST_ASSERT(strstr(texts[0], "# One")     != NULL);
+        TEST_ASSERT(strstr(texts[0], "## Two")    != NULL);
+        TEST_ASSERT(strstr(texts[0], "### Three") != NULL);
+    }
+    free_chunks(texts, n);
+    unlink(p);
+}
+
+static void test_markdown_splits_on_headers_when_oversize(void) {
+    /* Three substantial sections with bodies sized so two-but-not-three
+       sections fit: coalescing keeps adjacent sections together but still
+       flushes at a header boundary when the next one would overflow. */
+    const char *p = "/tmp/crag_test_md_split.md";
+    char body[401];
+    for (int i = 0; i < 400; i++) body[i] = (i % 80 == 79) ? ' ' : 'a';
+    body[400] = '\0';
+
+    FILE *f = fopen(p, "w");
+    TEST_ASSERT(f != NULL);
+    fprintf(f, "# One\n%s\n\n",   body);
+    fprintf(f, "## Two\n%s\n\n",  body);
+    fprintf(f, "### Three\n%s\n", body);
+    fclose(f);
+
+    /* each section ~410 chars; max=900 → two sections (~820) fit, the
+       third forces a flush at the header boundary → 2 chunks. */
+    char *texts[8] = {0};
+    int n = chunk_file(p, 900, texts, 8);
+    TEST_ASSERT(n == 2);
+    if (n == 2) {
+        TEST_ASSERT(strstr(texts[0], "# One")     != NULL);
+        TEST_ASSERT(strstr(texts[0], "## Two")    != NULL);
+        TEST_ASSERT(strstr(texts[1], "### Three") != NULL);
+        /* split happens at header — chunk 0 must NOT contain Three */
+        TEST_ASSERT(strstr(texts[0], "### Three") == NULL);
     }
     free_chunks(texts, n);
     unlink(p);
@@ -174,7 +208,8 @@ int main(void) {
     fprintf(stderr, "test_chunker:\n");
     TEST_RUN(test_missing_file_returns_error);
     TEST_RUN(test_empty_file_produces_zero_chunks);
-    TEST_RUN(test_markdown_splits_on_headers);
+    TEST_RUN(test_markdown_coalesces_short_sections);
+    TEST_RUN(test_markdown_splits_on_headers_when_oversize);
     TEST_RUN(test_code_fence_is_not_header);
     TEST_RUN(test_large_paragraph_forces_sliding_split);
     TEST_RUN(test_chunks_are_trimmed);
