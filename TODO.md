@@ -63,21 +63,22 @@ a finished project. Ship these before MCP.
   readers deciding whether to read further; CLAUDE.md is for
   collaborators.
 
-### 1.5 Re-benchmark `/usr/share/doc` with hybrid + incremental
-- **Why:** `docs/benchmarks.md` is stamped at `acbd9e2`, pre-hybrid
-  and pre-incremental. The ~19-minute cold index number is still
-  defensible, but the retrieval spot-check used cosine only — we need
-  to confirm hybrid fixes the `gnupg` vs `sequoia-sqv` near-miss and
-  record the incremental-rerun wall time (should be seconds).
-- **Shape:** Re-run the same 10 queries under `--search hybrid`;
-  measure a full rerun of `crag index` to report incremental-mode
-  wall time. Update `docs/benchmarks.md` with a new section; keep the
-  prior cosine numbers for comparison.
-- **Watchouts:** Costs ~30 min of Ollama embedding to rebuild the DB
-  if you wipe it; incremental rerun is the cheap one. Run the cold
-  rebuild once during a break.
-- **Success criterion:** Benchmark doc updated; `gnupg` query returns
-  `gnupg` at rank 1 under hybrid.
+### 1.5 Re-benchmark `/usr/share/doc` with hybrid + incremental — DONE
+- Re-ran the cold rebuild against `b636f96` with `--workers 4` and md
+  coalesce live: **18m48s → 11m27s** (1.64×), 57 837 → 56 997 chunks
+  (-840 from md coalesce on small READMEs), same 16 context-drops,
+  same 2 partial files.
+- Incremental rerun on the unchanged corpus: **36 ms** — `stat()` +
+  `SELECT mtime,size` per file, no embedding.
+- Query latency p50: cosine 131 ms / hybrid 133 ms / **bm25 19 ms**
+  (BM25 skips the embedder).
+- 10-query spot-check (kitty, lazygit, python-networkx, bison added
+  for fully-fair targets): cosine 8/10@1, hybrid 9/10@1.
+- The "gnupg → sequoia-sqv" miss is upstream of retrieval: gnupg's
+  README/FAQ/HACKING are extension-less, so `--ext md,txt` excludes
+  them. Filtered to the 9 fully-indexed packages, hybrid is 9/9@1.
+  Added as a Tier 2 candidate (extension-less doc filenames).
+- `docs/benchmarks.md` now has a Run 3 section with all the above.
 
 ### 1.6 Update `docs/research/study.md` §8
 - **Why:** §8 still lists incremental reindex and hybrid retrieval as
@@ -99,6 +100,21 @@ Good-to-haves. Skip any that feel like busywork for your goals.
   raise depth cap or add a byte-level fallback split.
 - Low user impact (2 files out of 448 = 0.4%) but worth documenting
   what edge case triggers it.
+
+### 2.2 Index extension-less doc files
+- **Why:** Run 3 turned up that gnupg's actual docs (`README`, `FAQ`,
+  `HACKING`, `KEYSERVER`) have no extension and slip past
+  `--ext md,txt`. Same is true for many distro packages
+  (`README`, `INSTALL`, `NEWS`, `LICENSE`, `ChangeLog`). The
+  retrieval spot-check can't measure these.
+- **Shape:** Add an opt-in flag (e.g. `--include-known-docs`) that
+  also matches a small whitelist of well-known basenames regardless
+  of extension. Or accept `--ext "md,txt,"` (trailing comma →
+  no-extension files), or simply teach the matcher to treat known
+  basenames as text.
+- **Success criterion:** With the new flag on, `gnupg/README` and
+  `gnupg/FAQ` end up in the index; the gnupg query returns gnupg
+  at rank 1 under hybrid.
 
 ### 2.2 Query-time snippet highlighting
 - Right now the text output dumps the full chunk. For BM25 and
@@ -166,6 +182,9 @@ None of these block MCP.
   per-header; large ones still split at header boundaries.
 - Local embedding backend already wired to llama.cpp `/embedding`
   in the MVP commit; verified end-to-end.
+- /usr/share/doc re-benchmark under parallel + hybrid + md coalesce
+  + incremental; gnupg miss correctly attributed to `--ext` filter,
+  not retrieval.
 
 ## Phase 2 (out of scope until Tier 1 is clear)
 
