@@ -193,6 +193,42 @@ Two takeaways for the roadmap:
   docs aren't in the index. Filtered to the 9 fully-indexed
   packages, hybrid is **9/9 @1**.
 
+## Run 4 — `/usr/share/doc` with `--include-known-docs`
+
+Same machine and corpus as Run 3, re-indexed with the new
+`--include-known-docs` flag so extension-less doc files (README,
+FAQ, HACKING, etc.) pass the walk filter. Same 10-query golden set.
+
+### Indexing
+
+| Metric | Run 3 | Run 4 (`--include-known-docs`) |
+|---|---|---|
+| Files scanned | 448 | **627** (+179 extension-less) |
+| Files indexed | 448 | 626 (1 sweep-removed inert) |
+| Chunks stored | 56 997 | **71 587** (+14 590) |
+| Chunks dropped | 16 (context) | 16 (context) |
+| Files partial | 2 | 2 |
+| DB size on disk | 278 MB | ~340 MB est. |
+
+The +179 files are the doc tail of /usr/share/doc that previously
+vanished into the `--ext md,txt` filter: `gnupg/README` and friends,
+plus a long list of `INSTALL`, `NEWS`, `AUTHORS`, `ChangeLog`
+files. The whitelist is conservative — package-specific
+extension-less names (gnupg's `KEYSERVER`, `DETAILS`, `OpenPGP`,
+`TRANSLATE`) stay out.
+
+### Retrieval spot-check (10 queries, fully fair)
+
+| Mode | recall@1 | recall@3 |
+|---|---|---|
+| cosine | 9/10 | 10/10 |
+| **hybrid** | **10/10** | **10/10** |
+
+`gnupg` lifts to rank 1 under hybrid (was missing entirely in Run 3
+because no gnupg docs were in the index). All ten target packages
+hit at rank 1 under hybrid; the only sub-1 result is `gnupg` at
+rank 2 under pure cosine, which hybrid cleans up. Clean sweep.
+
 ## How to reproduce
 
 ```bash
@@ -219,3 +255,4 @@ done
 Run 1 and Run 2 captured 2026-04-24 against commit `acbd9e2`.
 Run 3 captured 2026-04-25 against commit `b636f96` (parallel pool
 + hybrid + md coalesce + incremental all live).
+Run 4 captured 2026-04-26 with `--include-known-docs` added.

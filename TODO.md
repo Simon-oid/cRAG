@@ -104,20 +104,20 @@ Good-to-haves. Skip any that feel like busywork for your goals.
 - Low user impact (2 files out of 448 = 0.4%) but worth documenting
   what edge case triggers it.
 
-### 2.2 Index extension-less doc files
-- **Why:** Run 3 turned up that gnupg's actual docs (`README`, `FAQ`,
-  `HACKING`, `KEYSERVER`) have no extension and slip past
-  `--ext md,txt`. Same is true for many distro packages
-  (`README`, `INSTALL`, `NEWS`, `LICENSE`, `ChangeLog`). The
-  retrieval spot-check can't measure these.
-- **Shape:** Add an opt-in flag (e.g. `--include-known-docs`) that
-  also matches a small whitelist of well-known basenames regardless
-  of extension. Or accept `--ext "md,txt,"` (trailing comma →
-  no-extension files), or simply teach the matcher to treat known
-  basenames as text.
-- **Success criterion:** With the new flag on, `gnupg/README` and
-  `gnupg/FAQ` end up in the index; the gnupg query returns gnupg
-  at rank 1 under hybrid.
+### 2.2 Index extension-less doc files — DONE
+- Shipped: `--include-known-docs` opt-in flag on `crag index`. With
+  the flag set, `has_ext()` accepts a small whitelist of
+  extension-less basenames in addition to `--ext` matches: `README`,
+  `FAQ`, `INSTALL`, `NEWS`, `HACKING`, `AUTHORS`, `COPYING`,
+  `LICENSE`, `NOTES`, `THANKS`, `TODO`, `ChangeLog`/`CHANGELOG`,
+  `HISTORY` (case-insensitive). Default behavior unchanged.
+- Verified on `/usr/share/doc`: 448 → 627 files scanned, 56 997 →
+  71 587 chunks. `gnupg/README`, `gnupg/FAQ`, `gnupg/HACKING` are
+  now in the index; gnupg-specific names (`KEYSERVER`, `DETAILS`,
+  `OpenPGP`, `TRANSLATE`) correctly stay out.
+- Spot-check went from 9/10 (hybrid Run 3) to **10/10 @1 hybrid**,
+  9/10 @1 cosine. gnupg lifts from absent → rank 1 under hybrid.
+  Run 4 in `docs/benchmarks.md`.
 
 ### 2.3 Query-time snippet highlighting
 - Right now the text output dumps the full chunk. For BM25 and
@@ -195,6 +195,8 @@ Chronological. `--ext` is `md,txt` throughout unless noted.
   `--ext` filter, not retrieval (`546f358`).
 - README.md added; `docs/research/study.md §8` rewritten in place
   (file is `.gitignore`d, local-only) — both close out Tier 1.
+- `--include-known-docs` flag for extension-less doc filenames;
+  hybrid spot-check climbs from 9/10 → 10/10 on `/usr/share/doc`.
 
 ## Phase 2 (out of scope until Tier 1 is clear)
 

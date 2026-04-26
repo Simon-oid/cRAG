@@ -112,6 +112,12 @@ called and the raw chunks are printed instead.
   pthread pool around `embed_one`. Engaged only when the backend
   has no native batch API. SQLite stays single-threaded
   (`SQLITE_THREADSAFE=0`) — only the main thread inserts.
+- **Extension-less docs.** `--ext` filters by extension by default.
+  Add `--include-known-docs` to also pick up well-known
+  extension-less doc filenames (`README`, `FAQ`, `INSTALL`, `NEWS`,
+  `HACKING`, `AUTHORS`, `COPYING`, `LICENSE`, `NOTES`, `THANKS`,
+  `TODO`, `ChangeLog`/`CHANGELOG`, `HISTORY`). Useful for distro doc
+  trees like `/usr/share/doc/gnupg`.
 
 ## Numbers
 

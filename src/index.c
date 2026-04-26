@@ -44,10 +44,22 @@ typedef struct {
     pthread_cond_t   all_done;
 } embed_pool_t;
 
+/* Basenames that are documentation in nearly every project but ship without
+   an extension. Opt-in via --include-known-docs so the default behavior of
+   --ext stays predictable. Match is case-insensitive (Linux distros are
+   inconsistent: README vs Readme; ChangeLog vs CHANGELOG). */
+static const char *KNOWN_DOC_BASENAMES[] = {
+    "README", "FAQ", "INSTALL", "NEWS", "HACKING", "AUTHORS",
+    "COPYING", "LICENSE", "NOTES", "THANKS", "TODO",
+    "ChangeLog", "CHANGELOG", "HISTORY",
+    NULL
+};
+
 /* walk state passed via file-scope struct (nftw provides no user-data pointer) */
 static struct {
     char          *exts[32];  /* owned by parse_exts / free_exts */
     int            next;
+    int            include_known_docs;  /* --include-known-docs */
     crag_embed_backend_t *emb;
     crag_store_t  *store;
     int            max_chars;
@@ -153,11 +165,18 @@ static void free_exts(void) {
 }
 
 static int has_ext(const char *path) {
-    const char *dot = strrchr(path, '.');
-    if (!dot) return 0;
-    dot++;
-    for (int i = 0; i < g_walk.next; i++) {
-        if (strcasecmp(dot, g_walk.exts[i]) == 0) return 1;
+    const char *base = strrchr(path, '/');
+    base = base ? base + 1 : path;
+    const char *dot = strrchr(base, '.');
+    if (dot) {
+        for (int i = 0; i < g_walk.next; i++) {
+            if (strcasecmp(dot + 1, g_walk.exts[i]) == 0) return 1;
+        }
+    }
+    if (g_walk.include_known_docs && !dot) {
+        for (const char **n = KNOWN_DOC_BASENAMES; *n; n++) {
+            if (strcasecmp(base, *n) == 0) return 1;
+        }
     }
     return 0;
 }
@@ -481,6 +500,7 @@ int cmd_index(int argc, char **argv) {
     int max_chars = CHUNK_MAX_CHARS_DEFAULT;
     int force = 0;
     int workers = 1;
+    int include_known_docs = 0;
 
     for (int i = 0; i < argc; i++) {
         if      (strcmp(argv[i], "--backend")   == 0 && i+1 < argc) backend   = argv[++i];
@@ -491,6 +511,7 @@ int cmd_index(int argc, char **argv) {
         else if (strcmp(argv[i], "--max-bytes") == 0 && i+1 < argc) max_chars = atoi(argv[++i]);
         else if (strcmp(argv[i], "--workers")   == 0 && i+1 < argc) workers   = atoi(argv[++i]);
         else if (strcmp(argv[i], "--force")     == 0) force = 1;
+        else if (strcmp(argv[i], "--include-known-docs") == 0) include_known_docs = 1;
         else if (argv[i][0] != '-') dir = argv[i];
     }
     if (workers < 1) workers = 1;
@@ -521,6 +542,7 @@ int cmd_index(int argc, char **argv) {
     g_walk.files_partial       = 0;
     g_walk.run_ts              = (long long)time(NULL);
     g_walk.force               = force;
+    g_walk.include_known_docs  = include_known_docs;
     g_walk.files_skipped       = 0;
     g_walk.files_indexed       = 0;
     g_walk.pool                = NULL;
