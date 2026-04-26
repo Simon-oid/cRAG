@@ -1,13 +1,14 @@
 # cRAG Roadmap
 
-Remaining work to take cRAG from "working MVP" to "portfolio-ready
-complete." Ordered by impact-per-effort. Once Tier 1 is clear, cRAG
-is done and Phase 2 (MCP wrapper) can start.
+cRAG v0.1.0 is feature-complete: Tier 1 (the items that materially
+shape how the project looks and feels) is fully closed. Tier 2 is
+optional polish; Tier 3 is large-scope deferred work. Phase 2 (the
+MCP wrapper) can start whenever the user gives the word.
 
-## Tier 1 — blocking "cRAG is done"
+## Tier 1 — blocking "cRAG is done" — ALL DONE
 
-These are the items that materially change how cRAG looks and feels as
-a finished project. Ship these before MCP.
+Each subsection below kept for traceability — what shipped, where,
+and what was measured. All six items closed.
 
 ### 1.1 Parallel indexing — DONE
 - Shipped: `--workers N` flag in `crag index`. Persistent pthread pool
@@ -25,19 +26,18 @@ a finished project. Ship these before MCP.
 - Still owed: re-bench `/usr/share/doc` cold and update
   `docs/benchmarks.md` (rolled into 1.5).
 
-### 1.2 Markdown chunker coalescing
-- **Why:** Mirror of the plaintext coalesce fix. The md chunker splits
-  on every header even when the whole file fits in `max_chars`, so
-  short READMEs get fragmented for no reason. Observed during the
-  rag-test-data run before the .txt fix; md path was never touched.
-- **Shape:** In `src/chunk.c`, walk header sections. Coalesce
-  consecutive sections into one chunk until adding the next would
-  overflow `max_chars`. Keep code-fence preservation intact.
-- **Watchouts:** `test_markdown_splits_on_headers` pins the old
-  behavior. Rewrite it to a corpus-sized test (small files coalesce,
-  large ones still split on headers).
-- **Success criterion:** New test green; existing retrieval quality
-  on rag-test-data unchanged.
+### 1.2 Markdown chunker coalescing — DONE
+- Shipped in `da6700f`. `src/chunk.c` markdown branch now walks
+  header boundaries with a `sec_start` / `safe_end` pair, accumulates
+  consecutive sections until adding the next would overflow
+  `max_chars`, and falls back to `sliding_split` for sections that
+  individually exceed the limit. Code-fence detection unchanged.
+- The old `test_markdown_splits_on_headers` (which pinned the
+  per-header behavior) was replaced with two corpus-sized tests:
+  short md → 1 chunk, oversized → splits at header boundary.
+- Verified on `tests/manual/corpus`: 5 md files of ~2.5 KB each go
+  from 6 chunks/file → 2 chunks/file; recall@3 stays at 100%, MRR
+  0.975. Full test suite 227/227.
 
 ### 1.3 Real implementation of `local` embedding backend — DONE
 - Already shipped in `a4c9052`. `src/embed_local.c` POSTs
@@ -119,20 +119,20 @@ Good-to-haves. Skip any that feel like busywork for your goals.
   `gnupg/FAQ` end up in the index; the gnupg query returns gnupg
   at rank 1 under hybrid.
 
-### 2.2 Query-time snippet highlighting
+### 2.3 Query-time snippet highlighting
 - Right now the text output dumps the full chunk. For BM25 and
   hybrid, FTS5 has a `highlight()` function that wraps matched terms.
   Purely cosmetic but makes the retrieval visibly explainable.
 - Only for text format; JSON output stays clean.
 
-### 2.3 `crag reindex` subcommand
+### 2.4 `crag reindex` subcommand
 - Right now `index` handles both fresh and incremental cases. A
   dedicated `reindex` that forces everything (alias for `index
   --force`) is easier to document and to use scripting against.
-- Or drop the idea — `--force` is already fine. Decide based on how
-  the README ends up reading.
+- Or drop the idea — `--force` is already fine. The README went
+  with `--force` only; revisit if scripting against it gets clumsy.
 
-### 2.4 Bulk export / import for the store
+### 2.5 Bulk export / import for the store
 - `crag export --format jsonl` to dump chunks (without vectors) and
   `crag import` to reload. Useful for debugging and for sharing an
   index without re-running expensive embedders. Low priority but a
@@ -170,7 +170,9 @@ None of these block MCP.
 
 ## Done (for reference)
 
-- Chunker plain-text coalescing (commit `e59ee47`).
+Chronological. `--ext` is `md,txt` throughout unless noted.
+
+- Chunker plain-text coalescing (`e59ee47`).
 - Interrupt-safe commits, CRAG_ECONTEXT recovery, partial/drop
   reporting (`a8e63c4`).
 - Git tree cleanup (`acbd9e2`).
@@ -179,15 +181,20 @@ None of these block MCP.
   `--force` flag (`2a13e85`).
 - Hybrid retrieval: FTS5 chunks_fts + BM25 + Reciprocal Rank Fusion,
   `--search cosine|bm25|hybrid` (`ba5f717`).
-- Parallel indexing: pthread embed pool with CRAG_ECONTEXT splits also
-  fanned through the pool, `--workers N` (default 1).
+- Parallel indexing: pthread embed pool with CRAG_ECONTEXT splits
+  fanned back through the pool, `--workers N` (default 1)
+  (`e9e5639`).
 - Markdown chunker coalescing: short md files no longer fragment
-  per-header; large ones still split at header boundaries.
+  per-header; large ones still split at header boundaries
+  (`da6700f`).
 - Local embedding backend already wired to llama.cpp `/embedding`
-  in the MVP commit; verified end-to-end.
-- /usr/share/doc re-benchmark under parallel + hybrid + md coalesce
-  + incremental; gnupg miss correctly attributed to `--ext` filter,
-  not retrieval.
+  in the MVP commit (`a4c9052`); verified end-to-end (`b636f96`
+  fixed the stale "stub" docs).
+- `/usr/share/doc` re-benchmark under parallel + hybrid + md
+  coalesce + incremental; gnupg miss correctly attributed to
+  `--ext` filter, not retrieval (`546f358`).
+- README.md added; `docs/research/study.md §8` rewritten in place
+  (file is `.gitignore`d, local-only) — both close out Tier 1.
 
 ## Phase 2 (out of scope until Tier 1 is clear)
 
