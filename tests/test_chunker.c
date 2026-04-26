@@ -189,6 +189,41 @@ static void test_text_splits_when_paragraphs_exceed_max(void) {
     unlink(p);
 }
 
+static void test_unbreakable_tail_does_not_loop(void) {
+    /* Regression: libsamplerate/index.md ends with a long PGP base64 block
+       inside a code fence. The tail had no spaces, no `. `, no `\n\n`, so
+       sliding_split's find_split() returned sec_end every iteration. With
+       split_at == sec_end and pos = sec_end - overlap, pos never advanced
+       past the previous iteration → the same trailing chunk got emitted
+       MAX_CHUNKS_PER_FILE times. The fix is to break when split_at >=
+       sec_end (the section is fully covered). */
+    const char *p = "/tmp/crag_test_unbreakable_tail.md";
+    FILE *f = fopen(p, "w");
+    TEST_ASSERT(f != NULL);
+    /* prose body, then a fence containing 600 chars of unbreakable base64-ish
+       content (no spaces; some newlines so it's not a single mega-line) */
+    fputs("# Header\n\n", f);
+    for (int i = 0; i < 5; i++) fputs("ordinary sentence text. ", f);
+    fputs("\n\n```\n", f);
+    for (int row = 0; row < 10; row++) {
+        for (int c = 0; c < 60; c++) fputc('A' + (c % 26), f);
+        fputc('\n', f);
+    }
+    fputs("```\n", f);
+    fclose(f);
+
+    char *texts[600] = {0};
+    int n = chunk_file(p, 400, texts, 600);
+    TEST_ASSERT(n > 0);
+    TEST_ASSERT(n < 30);   /* a sane upper bound; pre-fix emitted ~512 */
+    /* No two consecutive chunks should be byte-identical — a duplicate was
+       the smoking gun for the loop. */
+    for (int i = 1; i < n; i++)
+        TEST_ASSERT(strcmp(texts[i - 1], texts[i]) != 0);
+    free_chunks(texts, n);
+    unlink(p);
+}
+
 static void test_respects_max_chunks_cap(void) {
     const char *p = "/tmp/crag_test_cap.md";
     char big[8192];
@@ -215,6 +250,7 @@ int main(void) {
     TEST_RUN(test_chunks_are_trimmed);
     TEST_RUN(test_text_coalesces_short_paragraphs);
     TEST_RUN(test_text_splits_when_paragraphs_exceed_max);
+    TEST_RUN(test_unbreakable_tail_does_not_loop);
     TEST_RUN(test_respects_max_chunks_cap);
     TEST_DONE();
 }

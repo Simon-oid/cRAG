@@ -392,6 +392,7 @@ static int walk_cb(const char *fpath, const struct stat *sb,
     }
 
     int file_dropped = 0;
+    int chunks_before = g_walk.total_chunks;
 
     /* embed in batches */
     for (int start = 0; start < n; ) {
@@ -446,8 +447,14 @@ static int walk_cb(const char *fpath, const struct stat *sb,
 
     for (int i = 0; i < n; i++) free(texts[i]);
 
+    /* Note: file_dropped over-counts in the pool path because one original
+       chunk that fully fans out to depth-3 leaves contributes 8 increments
+       instead of 1. Use the actual insert count for fully-vs-partial
+       classification, but keep file_dropped in the diagnostic message
+       since it still answers "how many embed calls failed". */
+    int inserted_this_file = g_walk.total_chunks - chunks_before;
     if (n > 0 && file_dropped > 0) {
-        if (file_dropped >= n) {
+        if (inserted_this_file == 0) {
             fprintf(stderr, "partial: ALL %d chunks of '%s' dropped\n", n, fpath);
             g_walk.files_fully_dropped++;
         } else {
@@ -461,7 +468,7 @@ static int walk_cb(const char *fpath, const struct stat *sb,
        whose every chunk was dropped are intentionally NOT upserted — that
        way the next run (possibly with a fixed embedder) will retry them
        instead of silently skipping. */
-    if (n > 0 && file_dropped < n) {
+    if (inserted_this_file > 0) {
         store_file_upsert(g_walk.store, fpath, mtime, size, g_walk.run_ts);
         g_walk.files_indexed++;
     }

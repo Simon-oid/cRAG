@@ -131,8 +131,11 @@ static int sliding_split(const char *buf, size_t sec_start, size_t sec_end,
 
         if (emit_chunk(buf, pos, split_at, out, max_n, n) < 0) return -1;
         if (split_at <= pos) break;
-        pos = split_at > (size_t)overlap ? split_at - (size_t)overlap : 0;
-        if (pos < sec_start) pos = sec_start;
+        if (split_at >= sec_end) break;  /* whole section covered */
+        size_t new_pos = split_at > (size_t)overlap ? split_at - (size_t)overlap : 0;
+        if (new_pos < sec_start) new_pos = sec_start;
+        if (new_pos <= pos) new_pos = split_at;  /* force progress when overlap eats it */
+        pos = new_pos;
     }
     return 0;
 }

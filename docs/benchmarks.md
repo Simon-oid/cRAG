@@ -229,6 +229,63 @@ because no gnupg docs were in the index). All ten target packages
 hit at rank 1 under hybrid; the only sub-1 result is `gnupg` at
 rank 2 under pure cosine, which hybrid cleans up. Clean sweep.
 
+## Run 5 — same corpus, sliding_split no-progress fix
+
+Same machine, same corpus, same 10-query golden set as Run 4. The
+chunker bug investigated for TODO 2.1 turned out to be fired on
+**every** multi-chunk file, not just the two flagged pathological
+ones: the final partial-window iteration of `sliding_split` left
+`pos = sec_end - overlap`, then the next iteration with
+`take = overlap` looped at the same `pos`, emitting the trailing
+fragment until `MAX_CHUNKS_PER_FILE = 512` saturated. Fix in
+`src/chunk.c::sliding_split`: break when `split_at >= sec_end`,
+and force progress when overlap eats the forward step.
+
+A second bug surfaced once the chunker stopped inflating: in the
+parallel pool path, `file_dropped` counted every leaf of the
+recursive split tree (8 leaves per fully-failing depth-3 chunk),
+which misclassified one-bad-chunk files as "fully dropped". Fixed
+by classifying via insert-count delta instead.
+
+### Indexing
+
+| Metric | Run 4 (with bug) | Run 5 (fixed) |
+|---|---|---|
+| Files scanned | 627 | 627 |
+| Files indexed | 625 | **626** |
+| Chunks stored | 71 587 | **13 541** (-58 046, -81%) |
+| Chunks dropped | 24 | 24 |
+| Files partial | 2 | 3 |
+| Files fully dropped | 1 (mis-classified) | **0** |
+| Cold wall time | ~13 m | **5 m 19 s** (~2.5×) |
+| DB size on disk | ~340 MB | **82 MB** (3.4× smaller) |
+
+The 58 046 chunks removed were all sliding-split tail duplicates —
+zero new information per chunk. The retrieval recall is unchanged
+(see below) because every duplicate was a strict subset of an
+existing chunk.
+
+### Query latency (k=5, warm, 10 queries)
+
+| | cosine | bm25 | hybrid |
+|---|---|---|---|
+| min | 54 | 13 | 57 |
+| p50 | 56 | 16 | 62 |
+| p95 | 60 | 26 | 68 |
+| max | 60 | 26 | 68 |
+
+(All in milliseconds.) Cosine and hybrid roughly halved (131 → 56
+p50, 133 → 62 p50) — the brute-force scan now walks 13.5k rows
+instead of 71.5k. BM25 was already FTS5-bound and only nudged
+down (19 → 16 p50). Hybrid stays a few ms above cosine for the
+extra FTS5 pass.
+
+### Retrieval spot-check
+
+Hybrid: **10/10 @1, 10/10 @3** — unchanged. Cosine: 9/10 @1,
+10/10 @3 — unchanged. Removing duplicates removed nothing
+informative.
+
 ## How to reproduce
 
 ```bash
@@ -256,3 +313,5 @@ Run 1 and Run 2 captured 2026-04-24 against commit `acbd9e2`.
 Run 3 captured 2026-04-25 against commit `b636f96` (parallel pool
 + hybrid + md coalesce + incremental all live).
 Run 4 captured 2026-04-26 with `--include-known-docs` added.
+Run 5 captured 2026-04-26 after the `sliding_split` no-progress
+fix and the pool partial-vs-fully-dropped accounting fix.

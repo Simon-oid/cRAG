@@ -121,18 +121,18 @@ called and the raw chunks are printed instead.
 
 ## Numbers
 
-Measured on `/usr/share/doc` (448 `.md`/`.txt` files, ~10.9 MB) with
-Ollama + `mxbai-embed-large` (1024-dim) on a Ryzen 5800X / RX 7800
-XT 16 GB:
+Measured on `/usr/share/doc` (627 `.md`/`.txt`/known-doc files,
+~12 MB) with Ollama + `mxbai-embed-large` (1024-dim) on a Ryzen
+5800X / RX 7800 XT 16 GB:
 
 | | value |
 |---|---|
-| Cold rebuild (`--workers 4`) | 11 m 27 s (1.64× over 1 worker) |
-| Incremental rerun (no changes) | 36 ms |
-| Chunks stored | 56 997 |
-| Query latency p50 — cosine / hybrid / bm25 | 131 / 133 / **19** ms |
-| Spot-check recall@1 (hybrid) | 9 / 10 (9/9 fully-indexed) |
-| DB on disk | 278 MB |
+| Cold rebuild (`--workers 4 --include-known-docs`) | 5 m 19 s |
+| Incremental rerun (no changes) | ~40 ms |
+| Chunks stored | 13 541 |
+| Query latency p50 — cosine / hybrid / bm25 | 56 / 62 / **16** ms |
+| Spot-check recall@1 (hybrid) | **10 / 10** |
+| DB on disk | 82 MB |
 
 Past 4 concurrent embedding calls Ollama serializes hard at the
 GPU level — the pool is correct, the bottleneck moves to Ollama.

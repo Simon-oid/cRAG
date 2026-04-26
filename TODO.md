@@ -96,13 +96,27 @@ and what was measured. All six items closed.
 
 Good-to-haves. Skip any that feel like busywork for your goals.
 
-### 2.1 Investigate the two pathological files
-- `libsamplerate/index.md` and `lazygit/Config.md` each still lose
-  one chunk even after depth-3 recursive split. Figure out what's
-  peculiar (long URLs? unbreakable whitespace? tables?). Either
-  raise depth cap or add a byte-level fallback split.
-- Low user impact (2 files out of 448 = 0.4%) but worth documenting
-  what edge case triggers it.
+### 2.1 Investigate the two pathological files — DONE
+- Root cause was bigger than the symptom: `sliding_split` had a
+  no-progress bug. When the trailing window had no whitespace
+  break (long PGP base64 in libsamplerate/index.md, dense YAML in
+  lazygit/Config.md), `find_split` returned `sec_end`, then
+  `pos = sec_end - overlap` left `pos` unchanged from the previous
+  iteration. The same trailing chunk was emitted until
+  `MAX_CHUNKS_PER_FILE = 512` saturated.
+- Effect on /usr/share/doc Run 4 (pre-fix): 4 libsamplerate files
+  ballooned to 511-514 chunks each; lazygit/Config.md to 512.
+  After fix: index.md → 1, Config.md → 22; 4 libsamplerate files
+  stay between 3–9 chunks each.
+- Fix in `src/chunk.c::sliding_split`: break when `split_at >=
+  sec_end` (section fully covered) and force progress when the
+  overlap eats all forward motion.
+- Regression test added: `test_unbreakable_tail_does_not_loop`
+  builds a fenced block of unbreakable content and asserts no
+  duplicate chunks. Suite now 41/41 chunker, 228 total.
+- The 1 remaining context-drop on each file is genuine — embedder
+  rejects 200-char base64/yaml tails because they tokenize past
+  512. Not a chunker bug; documented in benchmarks.md Run 5.
 
 ### 2.2 Index extension-less doc files — DONE
 - Shipped: `--include-known-docs` opt-in flag on `crag index`. With
@@ -197,6 +211,10 @@ Chronological. `--ext` is `md,txt` throughout unless noted.
   (file is `.gitignore`d, local-only) — both close out Tier 1.
 - `--include-known-docs` flag for extension-less doc filenames;
   hybrid spot-check climbs from 9/10 → 10/10 on `/usr/share/doc`.
+- `chunk: sliding_split no-progress fix` (`9ce6c88` was the
+  prerequisite refactor). Closes the libsamplerate/lazygit
+  duplicate-chunk loop; pathological files drop to single-digit
+  chunk counts.
 
 ## Phase 2 (out of scope until Tier 1 is clear)
 
