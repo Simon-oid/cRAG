@@ -1,6 +1,8 @@
+#define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include "crag.h"
 #include "embed.h"
 #include "store.h"
@@ -97,6 +99,13 @@ int cmd_query(int argc, char **argv) {
     int rc = 0;
     if (!do_gen) {
         int json_out = strcmp(format, "json") == 0;
+        /* Highlight matched terms in text output for bm25/hybrid. ANSI bold
+           yellow when stdout is a terminal; plain `<<token>>` when piped or
+           redirected so the markers survive in scripts and saved logs. JSON
+           always stays unhighlighted to keep the payload machine-clean. */
+        int highlight_on = !json_out && !mode_cosine;
+        const char *open  = isatty(fileno(stdout)) ? "\033[1;33m" : "<<";
+        const char *close = isatty(fileno(stdout)) ? "\033[0m"    : ">>";
         if (json_out) printf("[\n");
         for (int i = 0; i < n; i++) {
             if (json_out) {
@@ -109,7 +118,13 @@ int cmd_query(int argc, char **argv) {
                        i < n-1 ? "," : "");
                 free(esrc); free(etext);
             } else {
-                printf("[%.4f] %s\n%s\n\n", scores[i], results[i].source, results[i].text);
+                char *hl = highlight_on
+                    ? store_highlight_for_id(&store, query_text, results[i].id, open, close)
+                    : NULL;
+                printf("[%.4f] %s\n%s\n\n",
+                       scores[i], results[i].source,
+                       hl ? hl : results[i].text);
+                free(hl);
             }
         }
         if (json_out) printf("]\n");

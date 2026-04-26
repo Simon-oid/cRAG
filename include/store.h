@@ -35,6 +35,12 @@ int  store_search_hybrid(crag_store_t *s,
 int  store_stats(crag_store_t *s, crag_store_stats_t *out);
 void store_close(crag_store_t *s);
 
+/* Returns a malloc'd copy of chunk `id`'s text with each FTS-matched token
+   wrapped in `open`/`close`. Returns NULL if `qtext` has no usable tokens,
+   the chunk doesn't match, or on error — caller falls back to raw text. */
+char *store_highlight_for_id(crag_store_t *s, const char *qtext, int id,
+                             const char *open, const char *close);
+
 /* --- incremental reindex helpers ------------------------------------------ */
 /* Returns 1 if the `files` row for `path` matches (mtime,size), 0 if it
    differs or no row exists, <0 on error. */

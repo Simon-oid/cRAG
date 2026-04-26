@@ -312,6 +312,43 @@ static void test_bm25_retrieves_lexical_match(void) {
     cleanup_db(p);
 }
 
+static void test_highlight_wraps_matched_terms(void) {
+    const char *p = "/tmp/crag_test_store_highlight.db";
+    cleanup_db(p);
+    crag_store_t s;
+    TEST_ASSERT(store_open(p, &s) == 0);
+
+    crag_chunk_t c = {0};
+    c.dim = 4;
+    c.source = "gpg.md";
+    c.text   = "GnuPG signs and verifies messages";
+    TEST_ASSERT(store_insert(&s, &c) == 0);
+    int gpg_id = sqlite3_last_insert_rowid(s.db);
+
+    char *hl = store_highlight_for_id(&s, "gnupg verifies", gpg_id, "<<", ">>");
+    TEST_ASSERT(hl != NULL);
+    if (hl) {
+        TEST_ASSERT(strstr(hl, "<<GnuPG>>")    != NULL);
+        TEST_ASSERT(strstr(hl, "<<verifies>>") != NULL);
+        TEST_ASSERT(strstr(hl, "signs")        != NULL);   /* unmatched: untouched */
+        free(hl);
+    }
+
+    /* No usable tokens → NULL (caller falls back to raw). */
+    char *hl_empty = store_highlight_for_id(&s, "?? !!", gpg_id, "<<", ">>");
+    TEST_ASSERT(hl_empty == NULL);
+
+    /* Chunk that doesn't match the query → NULL. */
+    c.source = "cat.md"; c.text = "Cats napping in the sunshine";
+    TEST_ASSERT(store_insert(&s, &c) == 0);
+    int cat_id = sqlite3_last_insert_rowid(s.db);
+    char *hl_miss = store_highlight_for_id(&s, "gnupg", cat_id, "<<", ">>");
+    TEST_ASSERT(hl_miss == NULL);
+
+    store_close(&s);
+    cleanup_db(p);
+}
+
 static void test_bm25_empty_query_returns_zero(void) {
     const char *p = "/tmp/crag_test_store_bm25_empty.db";
     cleanup_db(p);
@@ -454,6 +491,7 @@ int main(void) {
     TEST_RUN(test_file_touch_updates_indexed_at);
     TEST_RUN(test_bm25_retrieves_lexical_match);
     TEST_RUN(test_bm25_empty_query_returns_zero);
+    TEST_RUN(test_highlight_wraps_matched_terms);
     TEST_RUN(test_hybrid_fuses_both_retrievers);
     TEST_RUN(test_hybrid_dedupes_shared_results);
     TEST_RUN(test_delete_chunks_for_updates_fts);

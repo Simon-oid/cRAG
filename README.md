@@ -94,6 +94,11 @@ Confidence-gated generation: with cosine search, if the top-1 score
 is below `CRAG_GEN_MIN_SCORE` (default 0.60) the generator is not
 called and the raw chunks are printed instead.
 
+Snippet highlighting: in `bm25` and `hybrid` modes, matched terms
+in the printed chunks are wrapped — ANSI bold-yellow on a TTY,
+literal `<<term>>` markers when piped or redirected. JSON output
+stays unmarked. Cosine output is unchanged.
+
 ## Indexing
 
 - **Markdown-aware.** Chunks split on `#` headers; code fences

@@ -274,6 +274,36 @@ int store_search_bm25(crag_store_t *s, const char *qtext, int k,
     return n;
 }
 
+char *store_highlight_for_id(crag_store_t *s, const char *qtext, int id,
+                             const char *open, const char *close) {
+    if (!s || !qtext || !open || !close) return NULL;
+    char *match = fts_match_from_query(qtext);
+    if (!match) return NULL;
+
+    /* sqlite3_mprintf %Q safely quotes/escapes the marker strings into the
+       SQL text. The MATCH expression and id are bound as parameters. */
+    char *sql = sqlite3_mprintf(
+        "SELECT highlight(chunks_fts, 0, %Q, %Q) "
+        "FROM chunks_fts WHERE chunks_fts MATCH ? AND rowid = ?",
+        open, close);
+    if (!sql) { free(match); return NULL; }
+
+    sqlite3_stmt *stmt;
+    char *result = NULL;
+    if (sqlite3_prepare_v2(s->db, sql, -1, &stmt, NULL) == SQLITE_OK) {
+        sqlite3_bind_text(stmt, 1, match, -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int (stmt, 2, id);
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
+            const char *t = (const char *)sqlite3_column_text(stmt, 0);
+            if (t) result = strdup(t);
+        }
+        sqlite3_finalize(stmt);
+    }
+    sqlite3_free(sql);
+    free(match);
+    return result;
+}
+
 #define RRF_K 60
 #define HYBRID_POOL_MIN 20
 

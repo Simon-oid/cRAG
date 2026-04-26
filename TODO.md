@@ -133,11 +133,18 @@ Good-to-haves. Skip any that feel like busywork for your goals.
   9/10 @1 cosine. gnupg lifts from absent → rank 1 under hybrid.
   Run 4 in `docs/benchmarks.md`.
 
-### 2.3 Query-time snippet highlighting
-- Right now the text output dumps the full chunk. For BM25 and
-  hybrid, FTS5 has a `highlight()` function that wraps matched terms.
-  Purely cosmetic but makes the retrieval visibly explainable.
-- Only for text format; JSON output stays clean.
+### 2.3 Query-time snippet highlighting — DONE
+- Shipped: `store_highlight_for_id()` runs FTS5's `highlight()`
+  per result and `query.c` substitutes the marked-up text in
+  text-format output for `bm25` and `hybrid` modes. ANSI bold
+  yellow on a TTY (`\033[1;33m...\033[0m`); literal `<<term>>`
+  markers when stdout is piped or redirected, so the markers
+  survive in saved logs.
+- Cosine output unchanged. JSON output unchanged.
+- Test: `test_highlight_wraps_matched_terms` covers happy path,
+  empty/punctuation-only queries (returns NULL → caller falls
+  back), and chunks that don't match (NULL).
+- Suite: 231/231.
 
 ### 2.4 `crag reindex` subcommand
 - Right now `index` handles both fresh and incremental cases. A
@@ -215,6 +222,8 @@ Chronological. `--ext` is `md,txt` throughout unless noted.
   prerequisite refactor). Closes the libsamplerate/lazygit
   duplicate-chunk loop; pathological files drop to single-digit
   chunk counts.
+- Query-time snippet highlighting via FTS5 `highlight()` for
+  `bm25` and `hybrid` modes; ANSI on TTY, `<<term>>` when piped.
 
 ## Phase 2 (out of scope until Tier 1 is clear)
 
