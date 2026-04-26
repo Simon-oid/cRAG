@@ -7,6 +7,19 @@
 
 int cmd_index(int argc, char **argv);
 int cmd_query(int argc, char **argv);
+int cmd_export(int argc, char **argv);
+int cmd_import(int argc, char **argv);
+
+/* `reindex` is sugar for `index --force`. Inject the flag and delegate. */
+static int cmd_reindex(int argc, char **argv) {
+    char **new_argv = malloc((size_t)(argc + 1) * sizeof(char *));
+    if (!new_argv) return 1;
+    new_argv[0] = (char *)"--force";
+    for (int i = 0; i < argc; i++) new_argv[i + 1] = argv[i];
+    int rc = cmd_index(argc + 1, new_argv);
+    free(new_argv);
+    return rc;
+}
 
 const char *crag_errstr(int err) {
     switch (err) {
@@ -55,12 +68,15 @@ static void usage(const char *prog) {
     fprintf(stderr, "cRAG %s\n", CRAG_VERSION);
     fprintf(stderr, "usage: %s <command> [args]\n\n", prog);
     fprintf(stderr, "commands:\n");
-    fprintf(stderr, "  index <dir>  [--db path] [--ext txt,md] [--backend local|openai|ollama]\n");
-    fprintf(stderr, "               [--max-bytes N] [--url url] [--force] [--workers N]\n");
-    fprintf(stderr, "               [--include-known-docs]\n");
-    fprintf(stderr, "  query <text> [--db path] [-k N] [--format text|json] [--generate]\n");
-    fprintf(stderr, "               [--search cosine|bm25|hybrid] [--backend local|openai] [--url url]\n");
-    fprintf(stderr, "  stats        [--db path]\n");
+    fprintf(stderr, "  index   <dir>  [--db path] [--ext txt,md] [--backend local|openai|ollama]\n");
+    fprintf(stderr, "                 [--max-bytes N] [--url url] [--force] [--workers N]\n");
+    fprintf(stderr, "                 [--include-known-docs]\n");
+    fprintf(stderr, "  reindex <dir>  alias for: index --force <dir> [opts...]\n");
+    fprintf(stderr, "  query   <text> [--db path] [-k N] [--format text|json] [--generate]\n");
+    fprintf(stderr, "                 [--search cosine|bm25|hybrid] [--backend local|openai] [--url url]\n");
+    fprintf(stderr, "  export         [--db path] [--out path]\n");
+    fprintf(stderr, "  import  <file> [--db path] [--backend local|openai|ollama] [--url url]\n");
+    fprintf(stderr, "  stats          [--db path]\n");
     fprintf(stderr, "\nenv vars:\n");
     fprintf(stderr, "  CRAG_DB              default db path\n");
     fprintf(stderr, "  CRAG_EMBED_BACKEND   local|openai|ollama (default: local)\n");
@@ -78,7 +94,10 @@ int main(int argc, char **argv) {
     int rc = 0;
     if (argc < 2) { usage(argv[0]); rc = 1; goto done; }
     if (strcmp(argv[1], "index")     == 0) { rc = cmd_index(argc-2, argv+2); goto done; }
+    if (strcmp(argv[1], "reindex")   == 0) { rc = cmd_reindex(argc-2, argv+2); goto done; }
     if (strcmp(argv[1], "query")     == 0) { rc = cmd_query(argc-2, argv+2); goto done; }
+    if (strcmp(argv[1], "export")    == 0) { rc = cmd_export(argc-2, argv+2); goto done; }
+    if (strcmp(argv[1], "import")    == 0) { rc = cmd_import(argc-2, argv+2); goto done; }
     if (strcmp(argv[1], "stats")     == 0) { rc = cmd_stats(argc-2, argv+2); goto done; }
     if (strcmp(argv[1], "--version") == 0 ||
         strcmp(argv[1], "-v")        == 0) { printf("cRAG %s\n", CRAG_VERSION); goto done; }

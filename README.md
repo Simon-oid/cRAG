@@ -62,6 +62,15 @@ export ANTHROPIC_API_KEY=sk-ant-...
 `./crag stats --db /tmp/notes.db` prints chunk count, file count, and
 the embedding dimension stored in the DB.
 
+`./crag reindex ./my-docs --db /tmp/notes.db` is sugar for `index
+--force` — easier to read in scripts when you want a full rebuild.
+
+`./crag export --db /tmp/notes.db --out dump.jsonl` dumps every chunk
+as one JSON object per line (`{"source":"...","text":"..."}`).
+Vectors are intentionally omitted so the file is portable across
+embedders. `./crag import dump.jsonl --db /tmp/new.db` reads it back,
+re-embeds each row through `CRAG_EMBED_BACKEND`, and inserts.
+
 ## Backends
 
 Plug-in vtables in `src/embed*.c` and `src/gen_*.c`. Pick with
@@ -163,9 +172,9 @@ Architecture and design constraints live in
 
 cRAG itself is feature-complete for v0.1.0. Phase 2 will wrap it
 behind an MCP server so an agent can call `crag_index`, `crag_query`,
-`crag_stats` over stdio JSON-RPC. Open items (HNSW, PDF/HTML, the
-extension-less doc filename gap, snippet highlighting) are listed
-in [`TODO.md`](TODO.md).
+`crag_stats` over stdio JSON-RPC. Remaining Tier 3 items (HNSW,
+PDF/HTML, Windows port, configurable FTS tokenizer) are listed in
+[`TODO.md`](TODO.md).
 
 ## License
 

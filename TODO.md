@@ -146,18 +146,29 @@ Good-to-haves. Skip any that feel like busywork for your goals.
   back), and chunks that don't match (NULL).
 - Suite: 231/231.
 
-### 2.4 `crag reindex` subcommand
-- Right now `index` handles both fresh and incremental cases. A
-  dedicated `reindex` that forces everything (alias for `index
-  --force`) is easier to document and to use scripting against.
-- Or drop the idea — `--force` is already fine. The README went
-  with `--force` only; revisit if scripting against it gets clumsy.
+### 2.4 `crag reindex` subcommand — DONE
+- Shipped as a thin wrapper in `src/main.c::cmd_reindex`: prepends
+  `--force` to argv and delegates to `cmd_index`. The summary line
+  shows `(--force)` so it's obvious which path ran.
+- Pure ergonomics — no behavior change, just a more discoverable
+  name for "rebuild this index from scratch". Easier to teach in
+  scripts than `crag index <dir> --force`.
 
-### 2.5 Bulk export / import for the store
-- `crag export --format jsonl` to dump chunks (without vectors) and
-  `crag import` to reload. Useful for debugging and for sharing an
-  index without re-running expensive embedders. Low priority but a
-  nice demo feature.
+### 2.5 Bulk export / import for the store — DONE
+- Shipped: `crag export [--db path] [--out path]` dumps every chunk
+  as one JSON object per line (`{"source":"...","text":"..."}`),
+  vectors intentionally excluded so the dump is portable across
+  embedders. Stdout by default, file via `--out`.
+- Shipped: `crag import <file> [--db path] [--backend ...] [--url ...]`
+  reads JSONL, re-embeds each row through the configured backend,
+  and inserts. Uses `embed_many` in batches of 64 when the backend
+  supports it (openai), otherwise sequential `embed_one`.
+- The `files` table is not touched on import — these chunks didn't
+  come from a disk walk, and a later `index` over the same source
+  paths will replace them via `store_delete_chunks_for()` as usual.
+- Smoke-tested round-trip with ollama: 2-file corpus → export →
+  import to fresh DB → query returns matched results with BM25
+  highlighting intact.
 
 ## Tier 3 — deferred
 
@@ -224,6 +235,11 @@ Chronological. `--ext` is `md,txt` throughout unless noted.
   chunk counts.
 - Query-time snippet highlighting via FTS5 `highlight()` for
   `bm25` and `hybrid` modes; ANSI on TTY, `<<term>>` when piped.
+- `crag reindex <dir>` alias for `crag index --force <dir>` — pure
+  argv shim in `cmd_reindex`, summary line tags it `(--force)`.
+- `crag export` / `crag import` JSONL roundtrip for portable
+  corpora. Vectors excluded from dump; import re-embeds via the
+  configured backend (uses `embed_many` batches when available).
 
 ## Phase 2 (out of scope until Tier 1 is clear)
 
