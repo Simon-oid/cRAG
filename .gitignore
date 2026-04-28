@@ -17,6 +17,8 @@ tests/test_util
 
 # Editor / tool state
 .claude/
+.gemini/
 
 # Personal working notes
 todo.md
+TODO.md
