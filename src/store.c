@@ -310,7 +310,7 @@ char *store_highlight_for_id(crag_store_t *s, const char *qtext, int id,
 int store_search_hybrid(crag_store_t *s,
                         const float *qvec, int dim,
                         const char *qtext, int k,
-                        crag_chunk_t *results, float *scores) {
+                        crag_chunk_t *results, crag_score_t *scores) {
     if (k <= 0) return 0;
     int pool = k * 4;
     if (pool < HYBRID_POOL_MIN) pool = HYBRID_POOL_MIN;
@@ -367,12 +367,29 @@ int store_search_hybrid(crag_store_t *s,
         }
         int id = ids[slot];
         crag_chunk_t *src = NULL;
-        for (int j = 0; j < n_cos;  j++) if (cos_res[j].id  == id) { src = &cos_res[j];  break; }
-        if (!src) for (int j = 0; j < n_bm25; j++) if (bm25_res[j].id == id) { src = &bm25_res[j]; break; }
+        /* Recover the raw per-retriever scores for this doc. cosine defaults
+           to NA and bm25 to 0 (no lexical hit) until found in a pool. */
+        float cos_s = CRAG_SCORE_NA, bm25_s = 0.0f;
+        int have_cos = 0;
+        for (int j = 0; j < n_cos; j++) if (cos_res[j].id == id) {
+            src = &cos_res[j]; cos_s = cos_sc[j]; have_cos = 1; break;
+        }
+        for (int j = 0; j < n_bm25; j++) if (bm25_res[j].id == id) {
+            if (!src) src = &bm25_res[j];
+            bm25_s = bm25_sc[j];
+            break;
+        }
         if (!src) { out_n = slot; break; }
+        /* A doc found only via BM25 was never cosine-scored in the pool.
+           Score it now from its stored vector so every result carries a
+           real cosine relevance signal, not just the fusion number. */
+        if (!have_cos && qvec && dim > 0 && dim <= CRAG_EMBED_DIM_MAX)
+            cos_s = search_cosine(qvec, src->vec, dim);
         results[slot] = *src;
         src->source = NULL; src->text = NULL;  /* ownership transferred */
-        scores[slot] = rrf[slot];
+        scores[slot].fusion = rrf[slot];
+        scores[slot].cosine = cos_s;
+        scores[slot].bm25   = bm25_s;
     }
 
 cleanup:

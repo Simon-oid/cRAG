@@ -1,10 +1,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include <unistd.h>
 #include "crag.h"
 #include "store.h"
 #include "test.h"
+
+static int approx(float a, float b) { return fabsf(a - b) < 1e-3f; }
 
 static void cleanup_db(const char *p) {
     unlink(p);
@@ -398,15 +401,20 @@ static void test_hybrid_fuses_both_retrievers(void) {
        BM25 lifts C while B has zero lexical signal. */
     float qvec[4] = {1.0f, 0, 0, 0};
     crag_chunk_t results[3] = {0};
-    float scores[3] = {0};
+    crag_score_t scores[3] = {0};
     int n = store_search_hybrid(&s, qvec, 4, "alpha", 3, results, scores);
     TEST_ASSERT(n == 3);
     TEST_ASSERT(strcmp(results[0].source, "A.md") == 0);
-    /* scores come from RRF fusion → positive, and monotonically decreasing */
-    TEST_ASSERT(scores[0] > 0.0f);
-    TEST_ASSERT(scores[0] >= scores[1]);
-    TEST_ASSERT(scores[1] >= scores[2]);
-    /* C must rank higher than B (it got a BM25 boost that B didn't). */
+    /* fusion scores come from RRF → positive, and monotonically decreasing */
+    TEST_ASSERT(scores[0].fusion > 0.0f);
+    TEST_ASSERT(scores[0].fusion >= scores[1].fusion);
+    TEST_ASSERT(scores[1].fusion >= scores[2].fusion);
+    /* A's vector equals the query → cosine 1.0; A also matches BM25 "alpha". */
+    TEST_ASSERT(approx(scores[0].cosine, 1.0f));
+    TEST_ASSERT(scores[0].bm25 > 0.0f);
+    /* C must rank higher than B (it got a BM25 boost that B didn't). The raw
+       scores must distinguish them even though both have cosine ~0: C has a
+       lexical hit ("alpha"), B has none. */
     int rank_b = -1, rank_c = -1;
     for (int i = 0; i < n; i++) {
         if (strcmp(results[i].source, "B.md") == 0) rank_b = i;
@@ -415,6 +423,10 @@ static void test_hybrid_fuses_both_retrievers(void) {
     TEST_ASSERT(rank_c >= 0);
     TEST_ASSERT(rank_b >= 0);
     TEST_ASSERT(rank_c < rank_b);
+    TEST_ASSERT(approx(scores[rank_c].cosine, 0.0f));
+    TEST_ASSERT(scores[rank_c].bm25 > 0.0f);   /* C: lexical hit  */
+    TEST_ASSERT(approx(scores[rank_b].cosine, 0.0f));
+    TEST_ASSERT(scores[rank_b].bm25 == 0.0f);  /* B: no lexical hit */
 
     for (int i = 0; i < n; i++) free_result_row(&results[i]);
     store_close(&s);
@@ -435,12 +447,59 @@ static void test_hybrid_dedupes_shared_results(void) {
 
     float qvec[2] = {1.0f, 0};
     crag_chunk_t results[3] = {0};
-    float scores[3] = {0};
+    crag_score_t scores[3] = {0};
     int n = store_search_hybrid(&s, qvec, 2, "unique", 3, results, scores);
     TEST_ASSERT(n == 1);  /* dedup to a single unique doc */
     TEST_ASSERT(strcmp(results[0].source, "only.md") == 0);
     /* Present in both retrievers at rank 1 → RRF = 2 * 1/61 ≈ 0.0328 */
-    TEST_ASSERT(scores[0] > 0.03f && scores[0] < 0.04f);
+    TEST_ASSERT(scores[0].fusion > 0.03f && scores[0].fusion < 0.04f);
+    /* Raw scores survive the fusion: exact vector match → cosine 1.0,
+       and the "unique" token gives a positive BM25 hit. */
+    TEST_ASSERT(approx(scores[0].cosine, 1.0f));
+    TEST_ASSERT(scores[0].bm25 > 0.0f);
+
+    for (int i = 0; i < n; i++) free_result_row(&results[i]);
+    store_close(&s);
+    cleanup_db(p);
+}
+
+static void test_hybrid_scores_bm25_only_hit(void) {
+    /* A doc that ranks outside the cosine pool but matches BM25 must still
+       come back with a real cosine score, computed from its stored vector
+       (the !have_cos recompute path), not left as CRAG_SCORE_NA. */
+    const char *p = "/tmp/crag_test_store_hybrid_bm25only.db";
+    cleanup_db(p);
+    crag_store_t s;
+    TEST_ASSERT(store_open(p, &s) == 0);
+
+    /* 20 filler docs with vec=(1,0): identical high cosine to the query,
+       enough to fill the cosine pool (max(k*4,20)=20 for k=5). */
+    crag_chunk_t c = {0};
+    c.dim = 2;
+    for (int i = 0; i < 20; i++) {
+        char name[32]; snprintf(name, sizeof name, "fill%d.md", i);
+        c.source = name; c.text = "filler text";
+        memset(c.vec, 0, sizeof c.vec); c.vec[0] = 1.0f;
+        TEST_ASSERT(store_insert(&s, &c) == 0);
+    }
+    /* Target doc: orthogonal vector (cosine 0 → outside the pool of 20),
+       but its text carries the query token, so only BM25 surfaces it. */
+    c.source = "target.md"; c.text = "zebra crossing";
+    memset(c.vec, 0, sizeof c.vec); c.vec[1] = 1.0f;
+    TEST_ASSERT(store_insert(&s, &c) == 0);
+
+    float qvec[2] = {1.0f, 0};
+    crag_chunk_t results[5] = {0};
+    crag_score_t scores[5] = {0};
+    int n = store_search_hybrid(&s, qvec, 2, "zebra", 5, results, scores);
+    TEST_ASSERT(n >= 1);
+    int rank = -1;
+    for (int i = 0; i < n; i++)
+        if (strcmp(results[i].source, "target.md") == 0) rank = i;
+    TEST_ASSERT(rank >= 0);                          /* BM25 surfaced it     */
+    TEST_ASSERT(scores[rank].bm25 > 0.0f);           /* lexical hit recorded */
+    TEST_ASSERT(scores[rank].cosine != CRAG_SCORE_NA); /* cosine recomputed  */
+    TEST_ASSERT(approx(scores[rank].cosine, 0.0f));  /* orthogonal → ~0      */
 
     for (int i = 0; i < n; i++) free_result_row(&results[i]);
     store_close(&s);
@@ -494,6 +553,7 @@ int main(void) {
     TEST_RUN(test_highlight_wraps_matched_terms);
     TEST_RUN(test_hybrid_fuses_both_retrievers);
     TEST_RUN(test_hybrid_dedupes_shared_results);
+    TEST_RUN(test_hybrid_scores_bm25_only_hit);
     TEST_RUN(test_delete_chunks_for_updates_fts);
     TEST_DONE();
 }

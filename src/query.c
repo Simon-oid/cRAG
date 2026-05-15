@@ -81,9 +81,12 @@ int cmd_query(int argc, char **argv) {
     }
 
     crag_chunk_t *results = calloc((size_t)top_k, sizeof(crag_chunk_t));
+    /* cosine/bm25 modes return one float per result; hybrid returns a
+       crag_score_t breakdown. Only one array is populated per run. */
     float        *scores  = calloc((size_t)top_k, sizeof(float));
-    if (!results || !scores) {
-        free(results); free(scores);
+    crag_score_t *hscores = calloc((size_t)top_k, sizeof(crag_score_t));
+    if (!results || !scores || !hscores) {
+        free(results); free(scores); free(hscores);
         store_close(&store);
         if (emb) embed_backend_free(emb);
         return 1;
@@ -93,7 +96,7 @@ int cmd_query(int argc, char **argv) {
     if (mode_cosine)      n = store_search(&store, qchunk.vec, qchunk.dim, top_k, results, scores);
     else if (mode_bm25)   n = store_search_bm25(&store, query_text, top_k, results, scores);
     else                  n = store_search_hybrid(&store, qchunk.vec, qchunk.dim,
-                                                  query_text, top_k, results, scores);
+                                                  query_text, top_k, results, hscores);
     if (n < 0) n = 0;
 
     int rc = 0;
@@ -111,19 +114,37 @@ int cmd_query(int argc, char **argv) {
             if (json_out) {
                 char *esrc  = json_escape_dup(results[i].source);
                 char *etext = json_escape_dup(results[i].text);
-                printf("  {\"score\":%.6f,\"source\":\"%s\",\"text\":\"%s\"}%s\n",
-                       scores[i],
-                       esrc  ? esrc  : "",
-                       etext ? etext : "",
-                       i < n-1 ? "," : "");
+                /* Hybrid also emits the raw cosine/bm25 breakdown so callers
+                   can threshold on calibrated relevance; the fusion `score`
+                   alone cannot be thresholded. */
+                if (mode_hybrid) {
+                    printf("  {\"score\":%.6f,\"cosine\":%.6f,\"bm25\":%.6f,"
+                           "\"source\":\"%s\",\"text\":\"%s\"}%s\n",
+                           hscores[i].fusion, hscores[i].cosine, hscores[i].bm25,
+                           esrc  ? esrc  : "",
+                           etext ? etext : "",
+                           i < n-1 ? "," : "");
+                } else {
+                    printf("  {\"score\":%.6f,\"source\":\"%s\",\"text\":\"%s\"}%s\n",
+                           scores[i],
+                           esrc  ? esrc  : "",
+                           etext ? etext : "",
+                           i < n-1 ? "," : "");
+                }
                 free(esrc); free(etext);
             } else {
                 char *hl = highlight_on
                     ? store_highlight_for_id(&store, query_text, results[i].id, open, close)
                     : NULL;
-                printf("[%.4f] %s\n%s\n\n",
-                       scores[i], results[i].source,
-                       hl ? hl : results[i].text);
+                if (mode_hybrid) {
+                    printf("[%.4f cos=%.3f bm25=%.2f] %s\n%s\n\n",
+                           hscores[i].fusion, hscores[i].cosine, hscores[i].bm25,
+                           results[i].source, hl ? hl : results[i].text);
+                } else {
+                    printf("[%.4f] %s\n%s\n\n",
+                           scores[i], results[i].source,
+                           hl ? hl : results[i].text);
+                }
                 free(hl);
             }
         }
@@ -136,7 +157,7 @@ int cmd_query(int argc, char **argv) {
          */
         const char *thresh_env = getenv("CRAG_GEN_MIN_SCORE");
         float min_score = thresh_env ? (float)atof(thresh_env) : DEFAULT_MIN_SCORE;
-        float top_score = (n > 0) ? scores[0] : 0.0f;
+        float top_score = (n > 0) ? (mode_hybrid ? hscores[0].fusion : scores[0]) : 0.0f;
         int   gate_active = mode_cosine;
 
         if (n == 0 || (gate_active && top_score < min_score)) {
@@ -201,7 +222,7 @@ int cmd_query(int argc, char **argv) {
 
 cleanup:
     for (int i = 0; i < n; i++) { free(results[i].source); free(results[i].text); }
-    free(results); free(scores);
+    free(results); free(scores); free(hscores);
     store_close(&store);
     embed_backend_free(emb);
     return rc;
