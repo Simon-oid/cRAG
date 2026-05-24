@@ -47,6 +47,38 @@ valgrind: $(TEST_BIN)
 clean:
 	rm -f $(OBJ) $(SQLITE_OBJ) $(BIN) $(TEST_BIN)
 
+# ---- Sanitizer builds ----------------------------------------------------
+# ASan/UBSan find memory-safety + undefined-behaviour bugs that valgrind
+# can miss (use-of-uninitialised on tight loops, signed-overflow in
+# scoring math, alignment violations on float-array casts). TSan finds
+# data races in the embed pool that valgrind cannot see at all.
+#
+# SQLite is vendored at -O2 -w and built by its own rule that does NOT
+# use $(CFLAGS), so the sanitizer flags never reach it. The sanitizer
+# runtime is pulled in via the sanitized src/*.o + test objects — this is
+# the standard "instrument your code, leave the trusted vendor blob
+# alone" pattern.
+SAN_BASE_CFLAGS := -std=c11 -Wall -Wextra -Wpedantic -O1 -g \
+                   -fno-omit-frame-pointer -Iinclude -Ithird_party \
+                   $(CURL_CFLAGS)
+ASAN_CFLAGS := $(SAN_BASE_CFLAGS) -fno-sanitize-recover=all \
+               -fsanitize=address,undefined
+TSAN_CFLAGS := $(SAN_BASE_CFLAGS) -fsanitize=thread
+
+ASAN_OPTS  := halt_on_error=1:abort_on_error=1:print_stacktrace=1
+UBSAN_OPTS := halt_on_error=1:print_stacktrace=1
+TSAN_OPTS  := halt_on_error=1:second_deadlock_stack=1
+
+test-asan:
+	$(MAKE) --no-print-directory clean
+	$(MAKE) --no-print-directory test CFLAGS="$(ASAN_CFLAGS)" \
+	    ASAN_OPTIONS="$(ASAN_OPTS)" UBSAN_OPTIONS="$(UBSAN_OPTS)"
+
+test-tsan:
+	$(MAKE) --no-print-directory clean
+	$(MAKE) --no-print-directory test CFLAGS="$(TSAN_CFLAGS)" \
+	    TSAN_OPTIONS="$(TSAN_OPTS)"
+
 # Manual quality tests — human-verifiable, not graded by CI.
 # Override BACKEND with: make manual-smoke BACKEND=openai
 BACKEND ?= ollama
@@ -71,5 +103,5 @@ manual-compare:
 
 manual: manual-smoke manual-recall manual-gen
 
-.PHONY: all test valgrind clean manual manual-smoke manual-recall manual-gen \
-        manual-record manual-compare
+.PHONY: all test valgrind test-asan test-tsan clean manual manual-smoke \
+        manual-recall manual-gen manual-record manual-compare

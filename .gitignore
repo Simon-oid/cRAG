@@ -10,6 +10,7 @@ docs/research/
 
 # Compiled test binaries (source is tests/*.c, binaries are tests/test_<name>)
 tests/test_chunker
+tests/test_embed_pool
 tests/test_retrieval
 tests/test_search
 tests/test_store
@@ -23,3 +24,5 @@ tests/test_util
 todo.md
 TODO.md
 CLAUDE.md
+STUDIO_RAG.md
+STUDIO_RAG.pdf
