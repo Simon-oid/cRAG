@@ -42,7 +42,7 @@ this guide uses Ollama.
 
 ```bash
 # 1. start the embedder
-ollama pull mxbai-embed-large
+ollama pull mxbai-embed-large       # English; for Italian/multilingual use bge-m3
 export CRAG_EMBED_BACKEND=ollama
 export CRAG_EMBED_MODEL=mxbai-embed-large
 
@@ -58,6 +58,16 @@ export ANTHROPIC_API_KEY=sk-ant-...
 ./crag query "summarise the foo retry policy" \
     --db /tmp/notes.db -k 5 --generate
 ```
+
+**Choosing an embedder — language matters.** `mxbai-embed-large` is
+English-centric. For non-English corpora (e.g. Italian municipal docs)
+prefer a multilingual model — the recommended default is **`bge-m3`**
+(`ollama pull bge-m3`; also 1024-dim, so it is a drop-in). On a 20-query
+Italian paraphrase probe (synonyms, low lexical overlap) over the
+synthetic Smart City fixture, `mxbai-embed-large` matched only **8/20**
+topics at rank 1 versus **20/20 for `bge-m3`** (see `docs/benchmarks.md`).
+All chunks in one DB share an embedder and dimension, so choose before
+indexing.
 
 `./crag stats --db /tmp/notes.db` prints chunk count, file count, and
 the embedding dimension stored in the DB.

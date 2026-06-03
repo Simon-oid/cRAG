@@ -29,6 +29,30 @@ chunk per paragraph (`\n\n` boundary) even when the whole file fit in
 `max_chars`. Fixed in `e59ee47` — paragraphs now coalesce until they
 would overflow `max_chars`.
 
+### Embedder language probe — mxbai vs bge-m3 (Italian)
+
+The `20/20` recall above is **keyword-grounded**: the queries shared
+vocabulary with the doc titles, so a surface-token match passes even
+without real Italian understanding. Re-run with **paraphrase** queries
+(one per distinct topic, synonyms, deliberately low lexical overlap →
+tests Italian *semantics*, not keyword match), topic-match@1 scored by
+`doc_NNN → ((NNN-1) % 20) + 1`:
+
+| Embedder | Italian paraphrase match@1 | match@3 |
+|---|---|---|
+| `mxbai-embed-large` (English-centric) | **8/20** | 8/20 |
+| `bge-m3` (multilingual, 1024-dim) | **20/20** | 20/20 |
+
+mxbai misses more than half of paraphrased Italian queries, and
+`@3 == @1` means the right topic isn't even in the top 3 on a miss —
+hard misses, not near misses. **For Italian (and non-English generally)
+use `bge-m3`**, a drop-in replacement (same 1024-dim store, same Ollama
+backend). The English BEIR numbers below (mxbai 0.7407 on SciFact) stay
+valid as pipeline calibration, but mxbai is the wrong model for a
+non-English deployment. Caveats: n=20, author-written paraphrases,
+topic-level match on a templated fixture — the 8-vs-20 gap is large and
+consistent, not a tie.
+
 ## Run 2 — `/usr/share/doc` (realistic, on the host)
 
 448 `.md` + `.txt` files across 204 installed packages — ~10.9 MB of
