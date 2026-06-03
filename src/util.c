@@ -3,23 +3,62 @@
 #include <string.h>
 #include "util.h"
 
+/* Length (1-4) of the well-formed UTF-8 sequence starting at p, or 0 if the
+   lead/continuation bytes are malformed. Safe on NUL-terminated input: a '\0'
+   reads as a non-continuation byte and fails validation before any over-read,
+   because the continuation checks short-circuit left to right. */
+static int utf8_seq_len(const unsigned char *p) {
+    unsigned char c = p[0];
+    if (c < 0x80) return 1;
+    if ((c & 0xE0) == 0xC0) {                       /* 110xxxxx, 2 bytes */
+        if (c < 0xC2) return 0;                     /* overlong */
+        return (p[1] & 0xC0) == 0x80 ? 2 : 0;
+    }
+    if ((c & 0xF0) == 0xE0) {                       /* 1110xxxx, 3 bytes */
+        if ((p[1] & 0xC0) != 0x80 || (p[2] & 0xC0) != 0x80) return 0;
+        if (c == 0xE0 && p[1] < 0xA0) return 0;     /* overlong */
+        if (c == 0xED && p[1] >= 0xA0) return 0;    /* UTF-16 surrogate */
+        return 3;
+    }
+    if ((c & 0xF8) == 0xF0) {                       /* 11110xxx, 4 bytes */
+        if (c > 0xF4) return 0;
+        if ((p[1] & 0xC0) != 0x80 || (p[2] & 0xC0) != 0x80 ||
+            (p[3] & 0xC0) != 0x80) return 0;
+        if (c == 0xF0 && p[1] < 0x90) return 0;     /* overlong */
+        if (c == 0xF4 && p[1] >= 0x90) return 0;    /* > U+10FFFF */
+        return 4;
+    }
+    return 0;                                        /* stray continuation / 0xF5+ */
+}
+
 int json_escape(const char *in, char *out, size_t out_sz) {
     if (!in || !out || out_sz == 0) return -1;
     size_t wi = 0;
 #define NEED(n) do { if (wi + (n) + 1 > out_sz) return -1; } while(0)
-    for (const char *p = in; *p; p++) {
+    for (const char *p = in; *p; ) {
         unsigned char c = (unsigned char)*p;
-        if      (c == '"')  { NEED(2); out[wi++] = '\\'; out[wi++] = '"';  }
-        else if (c == '\\') { NEED(2); out[wi++] = '\\'; out[wi++] = '\\'; }
-        else if (c == '\n') { NEED(2); out[wi++] = '\\'; out[wi++] = 'n';  }
-        else if (c == '\r') { NEED(2); out[wi++] = '\\'; out[wi++] = 'r';  }
-        else if (c == '\t') { NEED(2); out[wi++] = '\\'; out[wi++] = 't';  }
+        if      (c == '"')  { NEED(2); out[wi++] = '\\'; out[wi++] = '"';  p++; }
+        else if (c == '\\') { NEED(2); out[wi++] = '\\'; out[wi++] = '\\'; p++; }
+        else if (c == '\n') { NEED(2); out[wi++] = '\\'; out[wi++] = 'n';  p++; }
+        else if (c == '\r') { NEED(2); out[wi++] = '\\'; out[wi++] = 'r';  p++; }
+        else if (c == '\t') { NEED(2); out[wi++] = '\\'; out[wi++] = 't';  p++; }
         else if (c < 0x20) {
             NEED(6);
             snprintf(out + wi, 7, "\\u%04x", c);
-            wi += 6;
+            wi += 6; p++;
+        } else if (c < 0x80) {
+            NEED(1); out[wi++] = (char)c; p++;
         } else {
-            NEED(1); out[wi++] = (char)c;
+            int len = utf8_seq_len((const unsigned char *)p);
+            if (len == 0) {                          /* replace bad byte w/ U+FFFD */
+                NEED(3);
+                out[wi++] = (char)0xEF; out[wi++] = (char)0xBF; out[wi++] = (char)0xBD;
+                p++;
+            } else {
+                NEED((size_t)len);
+                for (int i = 0; i < len; i++) out[wi++] = p[i];
+                p += len;
+            }
         }
     }
 #undef NEED

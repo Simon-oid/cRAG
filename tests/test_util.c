@@ -66,6 +66,36 @@ static void test_escape_dup_null_input(void) {
     TEST_ASSERT(json_escape_dup(NULL) == NULL);
 }
 
+/* Well-formed UTF-8 (é = C3 A9, € = E2 82 AC, 😀 = F0 9F 98 80) passes
+   through byte-for-byte — the escaper must not mangle multi-byte text. */
+static void test_escape_valid_utf8_passthrough(void) {
+    char *s = json_escape_dup("caf\xC3\xA9 \xE2\x82\xAC \xF0\x9F\x98\x80");
+    TEST_ASSERT(s != NULL);
+    TEST_ASSERT(strcmp(s, "caf\xC3\xA9 \xE2\x82\xAC \xF0\x9F\x98\x80") == 0);
+    free(s);
+}
+
+/* Malformed UTF-8 must become the U+FFFD replacement char (EF BF BD) so the
+   emitted JSON stays valid — strict parsers (e.g. llama.cpp) reject raw bad
+   bytes. 0xFF is never legal; 0xC3 followed by a non-continuation is a broken
+   2-byte lead; a stray 0x80 continuation has no lead. */
+static void test_escape_invalid_utf8_replaced(void) {
+    char *s = json_escape_dup("a\xFF" "b");          /* lone 0xFF */
+    TEST_ASSERT(s != NULL);
+    TEST_ASSERT(strcmp(s, "a\xEF\xBF\xBD" "b") == 0);
+    free(s);
+
+    char *t = json_escape_dup("x\xC3" "y");          /* truncated 2-byte seq */
+    TEST_ASSERT(t != NULL);
+    TEST_ASSERT(strcmp(t, "x\xEF\xBF\xBD" "y") == 0);
+    free(t);
+
+    char *u = json_escape_dup("\x80z");              /* stray continuation */
+    TEST_ASSERT(u != NULL);
+    TEST_ASSERT(strcmp(u, "\xEF\xBF\xBD" "z") == 0);
+    free(u);
+}
+
 static void test_extract_floats_basic(void) {
     const char *j = "{\"embedding\":[1.0, 2.5, -3.0, 0.5]}";
     float v[8] = {0};
@@ -152,6 +182,8 @@ int main(void) {
     TEST_RUN(test_escape_null_inputs_return_error);
     TEST_RUN(test_escape_dup_roundtrip);
     TEST_RUN(test_escape_dup_null_input);
+    TEST_RUN(test_escape_valid_utf8_passthrough);
+    TEST_RUN(test_escape_invalid_utf8_replaced);
     TEST_RUN(test_extract_floats_basic);
     TEST_RUN(test_extract_floats_missing_key);
     TEST_RUN(test_extract_floats_respects_max_n);

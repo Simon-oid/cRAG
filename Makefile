@@ -79,6 +79,23 @@ test-tsan:
 	$(MAKE) --no-print-directory test CFLAGS="$(TSAN_CFLAGS)" \
 	    TSAN_OPTIONS="$(TSAN_OPTS)"
 
+# One-command robustness gate. Fail-fast: the first defect stops everything.
+# Layers, cheapest signal first: plain tests, then valgrind (reuses the same
+# default build), then ASan/UBSan and TSan (each cleans + rebuilds with its
+# own instrumentation). test_fuzz runs in every layer — under ASan it is a
+# real fuzzer of the hand-rolled parsers (CRAG_FUZZ_ITERS/_SEED to widen).
+# Leaves a fresh default build behind so a later plain `make` is uninstrumented.
+check:
+	$(MAKE) --no-print-directory clean
+	$(MAKE) --no-print-directory test
+	@command -v valgrind >/dev/null 2>&1 \
+	    && $(MAKE) --no-print-directory valgrind \
+	    || echo "check: valgrind not installed — skipping (ASan/UBSan still cover memory safety)"
+	$(MAKE) --no-print-directory test-asan
+	$(MAKE) --no-print-directory test-tsan
+	$(MAKE) --no-print-directory clean all
+	@echo "check: all robustness gates passed"
+
 # Manual quality tests — human-verifiable, not graded by CI.
 # Override BACKEND with: make manual-smoke BACKEND=openai
 BACKEND ?= ollama
