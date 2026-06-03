@@ -103,5 +103,12 @@ manual-compare:
 
 manual: manual-smoke manual-recall manual-gen
 
-.PHONY: all test valgrind test-asan test-tsan clean manual manual-smoke \
-        manual-recall manual-gen manual-record manual-compare
+# ---- Retrieval-quality eval (BEIR SciFact) -------------------------------
+# Measures cosine/bm25/hybrid against human relevance judgments and prints
+# nDCG@10 / Recall@10 / MRR@10 plus published reference numbers. Needs a
+# running embedder (default ollama + mxbai-embed-large). See tests/eval/.
+eval: $(BIN) tests/eval_beir
+	@bash tests/eval/run.sh
+
+.PHONY: all test valgrind test-asan test-tsan check clean manual manual-smoke \
+        manual-recall manual-gen manual-record manual-compare eval

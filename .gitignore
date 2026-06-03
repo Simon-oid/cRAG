@@ -15,6 +15,10 @@ tests/test_retrieval
 tests/test_search
 tests/test_store
 tests/test_util
+tests/eval_beir
+
+# Eval: ephemeral per-run results (baseline.csv is the committed reference)
+tests/eval/results.csv
 
 # Editor / tool state
 .claude/
