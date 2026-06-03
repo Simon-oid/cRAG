@@ -120,12 +120,14 @@ manual-compare:
 
 manual: manual-smoke manual-recall manual-gen
 
-# ---- Retrieval-quality eval (BEIR SciFact) -------------------------------
+# ---- Retrieval-quality eval (BEIR) ---------------------------------------
 # Measures cosine/bm25/hybrid against human relevance judgments and prints
 # nDCG@10 / Recall@10 / MRR@10 plus published reference numbers. Needs a
 # running embedder (default ollama + mxbai-embed-large). See tests/eval/.
+# Pick the dataset with DATASET=<name>, e.g. `make eval DATASET=nfcorpus`.
+DATASET ?= scifact
 eval: $(BIN) tests/eval_beir
-	@bash tests/eval/run.sh
+	@DATASET=$(DATASET) bash tests/eval/run.sh
 
 .PHONY: all test valgrind test-asan test-tsan check clean manual manual-smoke \
         manual-recall manual-gen manual-record manual-compare eval

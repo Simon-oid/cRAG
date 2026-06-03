@@ -35,7 +35,7 @@
 #include "rerank.h"
 
 #define DOCID_MAX     32       /* BEIR corpus ids are short strings        */
-#define MAX_REL       64       /* relevant docs per query (scifact: <=~5)  */
+#define MAX_REL       1024     /* relevant docs/query (scifact <=~5, nfcorpus <=475) */
 #define CHUNK_K       150      /* chunks pulled before collapsing to docs  */
 #define RANK_CUT      10       /* nDCG/MRR reported @10                     */
 #define MAX_DOCS      100      /* deepest doc cutoff we collapse to        */
@@ -341,7 +341,8 @@ static const char *mode_name[M_COUNT] = { "cosine", "bm25", "hybrid", "rerank" }
 
 static int run_eval(const char *db_path, const char *queries_path,
                     const char *qrels_path, int k_chunks, const char *csv_path,
-                    const char *rr_name, const char *rr_url, int rr_pool) {
+                    const char *rr_name, const char *rr_url, int rr_pool,
+                    const char *dataset) {
     if (load_qrels(qrels_path) < 0) return 1;
     if (load_queries(queries_path) < 0) return 1;
 
@@ -453,7 +454,10 @@ static int run_eval(const char *db_path, const char *queries_path,
 
     int nprint = rr ? M_COUNT : M_RERANK;   /* hide rerank row unless active */
 
-    printf("\n=== cRAG retrieval quality — SciFact (BEIR) ===\n");
+    int is_nfcorpus = dataset && strcmp(dataset, "nfcorpus") == 0;
+
+    printf("\n=== cRAG retrieval quality — %s (BEIR) ===\n",
+           dataset ? dataset : "scifact");
     printf("%-10s %9s %8s %9s %9s %10s %8s\n", "mode", "nDCG@10", "MRR@10",
            "R@10", "R@50", "R@100", "queries");
     for (int m = 0; m < nprint; m++) {
@@ -475,13 +479,27 @@ static int run_eval(const char *db_path, const char *queries_path,
                " (+%.4f recoverable)\n", r10, r100, r100 - r10);
     }
 
-    printf("\n--- published reference (BEIR/MTEB, SciFact nDCG@10) ---\n");
-    printf("  BM25 (Anserini/BEIR paper) .............. 0.665\n");
-    printf("  all-MiniLM-L6-v2 (dense) ................ 0.645\n");
-    printf("  Contriever (fine-tuned) ................. 0.677\n");
-    printf("  bge-small-en-v1.5 ....................... ~0.71\n");
-    printf("  mxbai-embed-large-v1 (MTEB) ............. ~0.74\n");
-    printf("  (cRAG's number depends on its configured embedder + fusion)\n");
+    if (is_nfcorpus) {
+        printf("\n--- published reference (BEIR/MTEB, NFCorpus nDCG@10) ---\n");
+        printf("  BM25 (Anserini/BEIR paper) .............. 0.325\n");
+        printf("  all-MiniLM-L6-v2 (dense) ................ ~0.305\n");
+        printf("  Contriever (fine-tuned) ................. ~0.328\n");
+        printf("  bge-small-en-v1.5 ....................... ~0.34\n");
+        printf("  mxbai-embed-large-v1 (MTEB) ............. ~0.358\n");
+        printf("  NFCorpus is a weak-dense medical task where BM25 is\n");
+        printf("  competitive — the classic place a cross-encoder helps.\n");
+        printf("  NB: this harness scores binary relevance, so absolute\n");
+        printf("  nDCG reads below graded-gain official numbers; the\n");
+        printf("  cosine/bm25/hybrid/rerank *deltas* are the signal.\n");
+    } else {
+        printf("\n--- published reference (BEIR/MTEB, SciFact nDCG@10) ---\n");
+        printf("  BM25 (Anserini/BEIR paper) .............. 0.665\n");
+        printf("  all-MiniLM-L6-v2 (dense) ................ 0.645\n");
+        printf("  Contriever (fine-tuned) ................. 0.677\n");
+        printf("  bge-small-en-v1.5 ....................... ~0.71\n");
+        printf("  mxbai-embed-large-v1 (MTEB) ............. ~0.74\n");
+        printf("  (cRAG's number depends on its configured embedder + fusion)\n");
+    }
 
     if (csv_path) {
         int exists = 0;
@@ -517,11 +535,13 @@ int main(int argc, char **argv) {
         const char *db = argv[2], *queries = argv[3], *qrels = argv[4];
         int k = CHUNK_K;
         const char *csv = NULL;
+        const char *dataset = "scifact";   /* drives header + reference block */
         const char *rr_name = NULL, *rr_url = NULL;
         int rr_pool = 100;            /* deep pool the cross-encoder reorders */
         for (int i = 5; i < argc; i++) {
             if (strcmp(argv[i], "-k") == 0 && i + 1 < argc) k = atoi(argv[++i]);
             else if (strcmp(argv[i], "--csv") == 0 && i + 1 < argc) csv = argv[++i];
+            else if (strcmp(argv[i], "--dataset") == 0 && i + 1 < argc) dataset = argv[++i];
             else if (strcmp(argv[i], "--rerank") == 0) {
                 if (!rr_name) rr_name = "llamacpp";
             }
@@ -536,15 +556,16 @@ int main(int argc, char **argv) {
         if (rr_pool <= 0) rr_pool = 100;
         /* --rerank-url alone implies the default llama.cpp rerank backend. */
         if (rr_url && !rr_name) rr_name = "llamacpp";
-        return run_eval(db, queries, qrels, k, csv, rr_name, rr_url, rr_pool);
+        return run_eval(db, queries, qrels, k, csv, rr_name, rr_url, rr_pool,
+                        dataset);
     }
 
     fprintf(stderr,
         "usage:\n"
         "  %s materialize <corpus.jsonl> <outdir>\n"
         "  %s eval <db> <queries.jsonl> <qrels.tsv> [-k N] [--csv path]\n"
-        "          [--rerank] [--rerank-backend NAME] [--rerank-url URL]\n"
-        "          [--rerank-pool N]\n",
+        "          [--dataset NAME] [--rerank] [--rerank-backend NAME]\n"
+        "          [--rerank-url URL] [--rerank-pool N]\n",
         argv[0], argv[0]);
     return 2;
 }
