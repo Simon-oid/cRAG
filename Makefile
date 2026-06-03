@@ -15,7 +15,10 @@ SQLITE_OBJ := third_party/sqlite3.o
 BIN     := crag
 
 TEST_SRC := $(wildcard tests/test_*.c)
-TEST_BIN := $(TEST_SRC:tests/%.c=tests/%)
+# eval_ci is an offline retrieval-quality regression gate (deterministic toy
+# embedder, no server). It runs in every layer that runs `test`, so a pipeline
+# regression trips it under plain test, valgrind, ASan and TSan alike.
+TEST_BIN := $(TEST_SRC:tests/%.c=tests/%) tests/eval_ci
 
 all: $(BIN)
 
@@ -35,6 +38,11 @@ tests/%: tests/%.c $(filter-out src/main.o, $(OBJ)) $(SQLITE_OBJ)
 
 test: $(TEST_BIN)
 	@for t in $(TEST_BIN); do echo "=== $$t ==="; ./$$t || exit 1; done
+
+# Offline retrieval-quality gate on its own (no embedding server, no network).
+# Same binary that runs inside `make test`; this target is for a quick check.
+eval-ci: tests/eval_ci
+	@./tests/eval_ci
 
 valgrind: $(TEST_BIN)
 	@command -v valgrind >/dev/null || { echo "valgrind not installed"; exit 1; }
@@ -130,4 +138,4 @@ eval: $(BIN) tests/eval_beir
 	@DATASET=$(DATASET) bash tests/eval/run.sh
 
 .PHONY: all test valgrind test-asan test-tsan check clean manual manual-smoke \
-        manual-recall manual-gen manual-record manual-compare eval
+        manual-recall manual-gen manual-record manual-compare eval eval-ci

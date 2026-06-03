@@ -18,6 +18,7 @@ tests/test_search
 tests/test_store
 tests/test_util
 tests/eval_beir
+tests/eval_ci
 
 # Eval: ephemeral per-run results (baseline.csv is the committed reference)
 tests/eval/results.csv
