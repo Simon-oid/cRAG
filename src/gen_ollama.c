@@ -10,9 +10,10 @@
 
 typedef struct {
     crag_generator_t base;   /* must be first */
-    char url[512];
-    char model[128];
-    int  max_tokens;
+    char   url[512];
+    char   model[128];
+    int    max_tokens;
+    double temperature;
 } ollama_gen_t;
 
 static char *ollama_run(crag_generator_t *g_,
@@ -31,8 +32,8 @@ static char *ollama_run(crag_generator_t *g_,
     snprintf(body, body_sz,
         "{\"model\":\"%s\",\"stream\":false,"
         "\"system\":\"%s\",\"prompt\":\"%s\","
-        "\"options\":{\"num_predict\":%d}}",
-        g->model, esys, euser, g->max_tokens);
+        "\"options\":{\"num_predict\":%d,\"temperature\":%.3f}}",
+        g->model, esys, euser, g->max_tokens, g->temperature);
     free(esys); free(euser);
 
     http_buf_t buf = {0};
@@ -89,6 +90,18 @@ crag_generator_t *gen_ollama_create(const crag_gen_cfg_t *cfg) {
     g->url[sizeof g->url - 1]     = '\0';
     g->model[sizeof g->model - 1] = '\0';
     g->max_tokens = cfg->max_tokens > 0 ? cfg->max_tokens : 1024;
+
+    /* Sampling temperature. Defaults to 0 (greedy/deterministic) — the right
+     * choice for grounded factual RAG, and what makes the eval harness a
+     * stable instrument. ollama's own default is 0.8. Override CRAG_GEN_TEMP;
+     * a malformed or negative value falls back to 0. */
+    const char *t = getenv("CRAG_GEN_TEMP");
+    g->temperature = 0.0;
+    if (t && *t) {
+        char *end = NULL;
+        double v = strtod(t, &end);
+        if (end != t && *end == '\0' && v >= 0.0) g->temperature = v;
+    }
 
     g->base.run     = ollama_run;
     g->base.cleanup = ollama_cleanup;

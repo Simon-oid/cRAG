@@ -85,7 +85,8 @@ static void usage(const char *prog) {
     fprintf(stderr, "  CRAG_GEN_BACKEND     anthropic|openai|ollama|local (default: local)\n");
     fprintf(stderr, "  CRAG_GEN_URL         generation endpoint\n");
     fprintf(stderr, "  CRAG_GEN_MODEL       model name\n");
-    fprintf(stderr, "  CRAG_GEN_MIN_SCORE   min top-1 cosine to call model (default 0.60)\n");
+    fprintf(stderr, "  CRAG_GEN_TEMP        ollama sampling temperature (default 0 = deterministic)\n");
+    fprintf(stderr, "  CRAG_GEN_MIN_SCORE   min top-1 cosine to call model (default 0.60; bge-m3 auto 0.38)\n");
     fprintf(stderr, "  ANTHROPIC_API_KEY    for anthropic backend\n");
 }
 
