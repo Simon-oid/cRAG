@@ -1,0 +1,37 @@
+# End-to-end answer-quality set for cRAG (Italian, bge-m3 + ollama gen).
+# The first measured signal at the ANSWER layer — everything else in the
+# suite measures retrieval or the seam. Auto-graded by answers.sh.
+#
+# Format: <type><TAB><category><TAB><fact_regex><TAB><question>
+#   type      ans = answerable (expect a grounded answer)
+#             ooc = out-of-corpus (expect a refusal, "Not in context.")
+#   category  expected source category (the doc the answer must come from);
+#             grounding check = top-1 retrieved doc is in this category.
+#             "-" for ooc rows.
+#   fact_regex  case-insensitive ERE the generated answer must contain to
+#             count as correct. "-" for ooc rows.
+#   question  the user question (Italian).
+#
+# NOTE on the corpus: ~/rag-test-data bodies are templated stubs whose only
+# reliable extractable facts are the "riduce i costi del 15%" line and the
+# "Smart City OS" ambit. So this is a GROSS-FAILURE smoke (hallucination,
+# wrong-doc grounding, spurious refusal of answerable Qs), not nuanced
+# grading. Swap in real Italian docs + richer facts to make it a yardstick;
+# the harness mechanism does not change.
+
+# --- answerable: the shared "15% cost reduction" fact, across categories ---
+ans	trasporti	15	di quanto si riducono i costi grazie all'analisi dei flussi di traffico con sensori IoT
+ans	energia	15	quale percentuale di risparmio sui costi porta il monitoraggio del consumo energetico degli edifici pubblici
+ans	architettura	15	che beneficio economico in percentuale offre il sistema distribuito per il coordinamento urbano
+
+# --- answerable: the "Smart City OS" ambit fact ---
+ans	ambiente	smart city	in quale piattaforma o sistema si inseriscono i sensori di qualita dell'aria del comune
+ans	sicurezza	smart city	a quale sistema cittadino complessivo appartiene la rete di videosorveglianza con analisi video
+
+# --- answerable: topic grounding (right category must be retrieved) ---
+ans	trasporti	15|costi|smart city	regolando i tempi dei semafori agli incroci, che vantaggio si ottiene
+
+# --- out-of-corpus: must refuse, not hallucinate ---
+ooc	-	-	qual e la ricetta completa della pasta alla carbonara
+ooc	-	-	qual e la capitale della Mongolia
+ooc	-	-	come si sostituisce una gomma bucata di una bicicletta da corsa

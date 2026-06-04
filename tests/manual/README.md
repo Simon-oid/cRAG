@@ -81,6 +81,37 @@ You read the output and judge:
 If no generation backend is reachable, runs in dry-run mode — prints
 the context and lets you mentally simulate the answer.
 
+### `answers.sh` — Level 4: are the ANSWERS correct and grounded?
+
+```bash
+bash tests/manual/answers.sh
+CRAG_DB=~/rag-test.db CRAG_GEN_MODEL=qwen2.5:3b bash tests/manual/answers.sh
+```
+
+The first **auto-graded** test at the answer layer — Levels 1–3 and the
+BEIR/eval-ci gates all measure retrieval or the cMCP seam; this is the
+only one that scores whether the assistant's *answers* are right. For each
+Italian question in `answers_it.tsv` it runs query → retrieve (bge-m3,
+cosine) → generate (ollama) and grades three things automatically:
+
+- **grounded** — the top-1 retrieved doc is in the expected category.
+- **answered** — the model produced an answer (didn't spuriously refuse).
+- **correct** — the answer contains the expected fact (case-insensitive ERE).
+
+Out-of-corpus questions are graded on **refusal** (must say "Not in
+context.", not hallucinate). Prints a scorecard, plus a
+**generation-gate calibration** demo: a genuine bge-m3 answer with cosine
+in `[0.38, 0.60)` is produced at gate 0.38 but **refused** at the CLI's
+mxbai-era default of 0.60 — the same calibration bug the cMCP cosine gate
+had, one layer up. Set `CRAG_GEN_MIN_SCORE=0.38` for bge-m3.
+
+It needs a bge-m3 index (`CRAG_DB`, default `~/rag-test.db`) and an ollama
+chat model (`CRAG_GEN_MODEL`, default `qwen2.5:3b`); it skips cleanly if
+either is missing. It is a **gross-failure smoke** — the fixture bodies are
+templated stubs, so it catches hallucination / wrong-doc grounding /
+spurious refusal, not nuanced quality. Swap in real Italian docs with
+richer facts to turn it into a yardstick; the harness is unchanged.
+
 ### `inspect.sh` — diagnostic tool
 
 ```bash
