@@ -1,37 +1,84 @@
-# End-to-end answer-quality set for cRAG (Italian, bge-m3 + ollama gen).
-# The first measured signal at the ANSWER layer — everything else in the
-# suite measures retrieval or the seam. Auto-graded by answers.sh.
+# Graded end-to-end answer set for cRAG over the Vallenova Italian corpus
+# (tests/manual/corpus_it/). The yardstick the templated fixture couldn't be:
+# every doc has DISTINCT, specific facts, so answers are gradeable and there
+# is a real relevance gradient. Auto-graded by answers.sh.
 #
-# Format: <type><TAB><category><TAB><fact_regex><TAB><question>
-#   type      ans = answerable (expect a grounded answer)
-#             ooc = out-of-corpus (expect a refusal, "Not in context.")
-#   category  expected source category (the doc the answer must come from);
-#             grounding check = top-1 retrieved doc is in this category.
-#             "-" for ooc rows.
-#   fact_regex  case-insensitive ERE the generated answer must contain to
-#             count as correct. "-" for ooc rows.
-#   question  the user question (Italian).
-#
-# NOTE on the corpus: ~/rag-test-data bodies are templated stubs whose only
-# reliable extractable facts are the "riduce i costi del 15%" line and the
-# "Smart City OS" ambit. So this is a GROSS-FAILURE smoke (hallucination,
-# wrong-doc grounding, spurious refusal of answerable Qs), not nuanced
-# grading. Swap in real Italian docs + richer facts to make it a yardstick;
-# the harness mechanism does not change.
+# Format: <type><TAB><doc><TAB><fact_regex><TAB><question>
+#   type   ans = answerable | ooc = out-of-corpus (expect "Not in context.")
+#   doc    expected source basename stem (grounding = top-1 retrieved doc).
+#          "-" for ooc rows.
+#   fact_regex  case-insensitive ERE the answer must contain to be correct.
+#          \b…\b guards short numbers against substring collisions. "-" for ooc.
+#   question  the user question (Italian). Many are paraphrased with low
+#          lexical overlap with the doc, to test semantics, not keyword match.
 
-# --- answerable: the shared "15% cost reduction" fact, across categories ---
-ans	trasporti	15	di quanto si riducono i costi grazie all'analisi dei flussi di traffico con sensori IoT
-ans	energia	15	quale percentuale di risparmio sui costi porta il monitoraggio del consumo energetico degli edifici pubblici
-ans	architettura	15	che beneficio economico in percentuale offre il sistema distribuito per il coordinamento urbano
+# --- ZTL ---
+ans	ztl	\b83\b	quanto si paga di multa entrando nella zona a traffico limitato senza permesso
+ans	ztl	\b25\b	qual e il costo del pass annuale ZTL per chi abita in centro
+ans	ztl	7:30|19:30	in quali orari e in vigore la ZTL del centro storico
 
-# --- answerable: the "Smart City OS" ambit fact ---
-ans	ambiente	smart city	in quale piattaforma o sistema si inseriscono i sensori di qualita dell'aria del comune
-ans	sicurezza	smart city	a quale sistema cittadino complessivo appartiene la rete di videosorveglianza con analisi video
+# --- Illuminazione ---
+ans	illuminazione	\b62\b	di quanto e calato il consumo di energia con i nuovi lampioni a LED
+ans	illuminazione	800|numero verde	come faccio a segnalare un lampione spento
+ans	illuminazione	\b50\b|met[àa]	di quanto viene ridotta l'intensita delle luci di notte sulle strade secondarie
 
-# --- answerable: topic grounding (right category must be retrieved) ---
-ans	trasporti	15|costi|smart city	regolando i tempi dei semafori agli incroci, che vantaggio si ottiene
+# --- Rifiuti ---
+ans	rifiuti	\b74\b	a quanto e arrivata la raccolta differenziata nel 2025
+ans	rifiuti	marted	in che giorno della settimana devo esporre la plastica
+ans	rifiuti	\b167\b	che sanzione rischio se abbandono i rifiuti per strada
 
-# --- out-of-corpus: must refuse, not hallucinate ---
-ooc	-	-	qual e la ricetta completa della pasta alla carbonara
-ooc	-	-	qual e la capitale della Mongolia
-ooc	-	-	come si sostituisce una gomma bucata di una bicicletta da corsa
+# --- Aria ---
+ans	aria	\b50\b	qual e il limite di allerta per le polveri sottili fini PM2.5
+ans	aria	diesel|euro ?4	cosa succede se il PM2.5 supera la soglia per tre giorni di fila
+
+# --- Trasporti ---
+ans	trasporti	\b35\b	quanto costa l'abbonamento mensile dell'autobus
+ans	trasporti	1[.,]50	qual e il prezzo di una corsa singola in bus
+ans	trasporti	\b12\b|dodici	ogni quanti minuti passa il bus nelle ore di punta
+
+# --- WiFi ---
+ans	wifi	\b30\b	a che velocita si naviga sulla rete wifi gratuita del comune
+ans	wifi	spid|telefono	come ci si registra al wifi pubblico la prima volta
+
+# --- Videosorveglianza ---
+ans	videosorveglianza	\b7\b|sette	per quanti giorni restano salvate le riprese delle telecamere
+ans	videosorveglianza	dpo|protezione dei dati	a chi mi rivolgo per i miei diritti sulla privacy delle telecamere
+
+# --- Ricarica EV ---
+ans	ricarica_ev	0[.,]45	quanto costa un kilowattora alle colonnine di ricarica
+ans	ricarica_ev	\b22\b|\b50\b	che potenza erogano le colonnine per le auto elettriche
+
+# --- App del cittadino ---
+ans	app_cittadino	\b5\b|cinque	entro quanto tempo il comune risponde a una segnalazione
+ans	app_cittadino	buche|lampion|rifiuti|tombin	che cosa posso segnalare con l'app del cittadino
+
+# --- Bilancio ---
+ans	bilancio	14	qual e la cifra totale stanziata per il programma smart city
+ans	bilancio	pnrr|\b40\b	da dove arrivano i finanziamenti del programma
+
+# --- Verde ---
+ans	verde	\b28\b	quanta acqua si risparmia con l'irrigazione intelligente dei parchi
+ans	verde	6\.?200	quanti alberi sono presenti nel verde pubblico
+
+# --- Sportello ---
+ans	sportello	\b47\b	quanti servizi sono disponibili online sullo sportello digitale
+ans	sportello	marted|gioved|9:00	quando e aperto lo sportello fisico di assistenza
+
+# --- Hard tier: precision distractors (the doc holds several similar facts) ---
+ans	trasporti	\b310\b	qual e il costo dell'abbonamento annuale dell'autobus
+ans	ricarica_ev	\b50\b	quanti kW erogano le colonnine di ricarica rapida fast
+ans	rifiuti	sabato	in che giorno della settimana si raccoglie il rifiuto indifferenziato
+
+# --- Hard tier: comprehension / negation (not a literal fact lookup) ---
+ans	videosorveglianza	\bno\b|non (le |viene |è )?(utilizz|usa)|non.*facciale	le telecamere comunali usano il riconoscimento facciale delle persone
+
+# --- Hard tier: within-corpus unanswerable (right doc, fact absent -> abstain, don't invent) ---
+nca	ztl	-	quante multe ZTL sono state elevate complessivamente nel 2025
+nca	aria	-	qual e la soglia di allerta giornaliera per l'ozono
+nca	trasporti	-	quanti passeggeri al giorno trasportano in media gli autobus
+
+# --- Out-of-corpus: must refuse ---
+ooc	-	-	qual e la ricetta della vera pizza napoletana
+ooc	-	-	chi ha vinto il festival di Sanremo nel 2024
+ooc	-	-	come si configura un server web nginx su linux
+ooc	-	-	quanto e alta la torre Eiffel a Parigi

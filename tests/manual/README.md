@@ -84,33 +84,40 @@ the context and lets you mentally simulate the answer.
 ### `answers.sh` — Level 4: are the ANSWERS correct and grounded?
 
 ```bash
-bash tests/manual/answers.sh
-CRAG_DB=~/rag-test.db CRAG_GEN_MODEL=qwen2.5:3b bash tests/manual/answers.sh
+bash tests/manual/answers.sh                            # bundled corpus, qwen2.5:3b
+CRAG_GEN_MODEL=qwen2.5:7b bash tests/manual/answers.sh  # compare a bigger model
+CRAG_DB=~/my.db bash tests/manual/answers.sh            # grade your own bge-m3 index
 ```
 
 The first **auto-graded** test at the answer layer — Levels 1–3 and the
-BEIR/eval-ci gates all measure retrieval or the cMCP seam; this is the
-only one that scores whether the assistant's *answers* are right. For each
-Italian question in `answers_it.tsv` it runs query → retrieve (bge-m3,
-cosine) → generate (ollama) and grades three things automatically:
+BEIR/eval-ci gates all measure retrieval or the cMCP seam; this is the only
+one that scores whether the assistant's *answers* are right. By default it
+indexes the bundled real corpus `corpus_it/` (the Vallenova Smart City docs —
+distinct, fact-bearing documents, a genuine yardstick) into a temp bge-m3 DB,
+then for each question in `answers_it.tsv` runs query → retrieve (cosine) →
+generate (ollama) and grades, across four dimensions:
 
-- **grounded** — the top-1 retrieved doc is in the expected category.
-- **answered** — the model produced an answer (didn't spuriously refuse).
-- **correct** — the answer contains the expected fact (case-insensitive ERE).
+- **fact lookups** (`ans`): *grounded* (top-1 doc is the expected one),
+  *answered* (no spurious refusal), *correct* (answer matches a fact ERE).
+  Includes precision distractors (annual vs monthly fare) and a
+  comprehension/negation case (do the cameras use facial recognition? → "no").
+- **within-corpus unanswerable** (`nca`): the right doc is retrieved but the
+  asked fact isn't in it — a good system **abstains**, a hallucinator invents.
+- **out-of-corpus** (`ooc`): graded on **refusal** ("Not in context.").
 
-Out-of-corpus questions are graded on **refusal** (must say "Not in
-context.", not hallucinate). Prints a scorecard, plus a
-**generation-gate calibration** demo: a genuine bge-m3 answer with cosine
-in `[0.38, 0.60)` is produced at gate 0.38 but **refused** at the CLI's
-mxbai-era default of 0.60 — the same calibration bug the cMCP cosine gate
-had, one layer up. Set `CRAG_GEN_MIN_SCORE=0.38` for bge-m3.
+Generation runs at **temperature 0** (cRAG's default; see `CRAG_GEN_TEMP`), so
+the scorecard is **deterministic** — a real before/after instrument, not a
+noisy one. It also prints a **generation-gate calibration** demo: a genuine
+bge-m3 answer with cosine in `[0.38, 0.60)` is produced at gate 0.38 but
+refused at the CLI's mxbai-era 0.60 default. Set `CRAG_GEN_MIN_SCORE=0.38` for
+bge-m3 (or rely on the embedder-aware default).
 
-It needs a bge-m3 index (`CRAG_DB`, default `~/rag-test.db`) and an ollama
-chat model (`CRAG_GEN_MODEL`, default `qwen2.5:3b`); it skips cleanly if
-either is missing. It is a **gross-failure smoke** — the fixture bodies are
-templated stubs, so it catches hallucination / wrong-doc grounding /
-spurious refusal, not nuanced quality. Swap in real Italian docs with
-richer facts to turn it into a yardstick; the harness is unchanged.
+Needs ollama with bge-m3 + a chat model (`CRAG_GEN_MODEL`, default
+`qwen2.5:3b`); skips cleanly if missing. To extend the yardstick, add docs to
+`corpus_it/` and rows to `answers_it.tsv` — no script change. Measured
+baseline (temp 0): **3b 31/32**, **7b 30/32** answerable, 3/3 abstain, 4/4
+refuse — i.e. on a real corpus the pipeline is near-perfect and a *bigger*
+model isn't automatically better (3b and 7b fail different items).
 
 ### `inspect.sh` — diagnostic tool
 

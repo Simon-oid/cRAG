@@ -8,31 +8,36 @@
 #
 # For each question in answers_it.tsv it runs query -> retrieve (bge-m3,
 # cosine) -> generate (ollama) and grades three things automatically:
-#   grounded  the top-1 retrieved doc is in the expected category
+#   grounded  the top-1 retrieved doc IS the expected document (by basename)
 #   answered  the model produced an answer (did not spuriously refuse)
 #   correct   the answer contains the expected fact (case-insensitive ERE)
 # and for out-of-corpus questions, that the model REFUSES ("Not in context.")
 # instead of hallucinating.
 #
+# By default it indexes the bundled real corpus (tests/manual/corpus_it/, the
+# Vallenova Smart City docs — distinct fact-bearing documents, a real
+# yardstick) into a temp DB, so the test is self-contained and reproducible.
+# Point CRAG_DB at your own bge-m3 index to grade a different corpus instead.
+#
 # Usage: tests/manual/answers.sh
-#   CRAG_DB             bge-m3 index to query   (default: ~/rag-test.db)
+#   CRAG_DB             grade THIS bge-m3 index instead of the bundled corpus
 #   CRAG_GEN_MODEL      ollama chat model       (default: qwen2.5:3b)
 #   CRAG_GEN_MIN_SCORE  gen confidence gate     (default: 0.38, bge-m3-tuned)
-#
-# It is a GROSS-FAILURE smoke (the fixture bodies are templated stubs — see
-# answers_it.tsv), not a nuanced yardstick. Swap in real Italian docs to
-# upgrade the signal; the harness is unchanged.
 
 set -uo pipefail
 cd "$(dirname "$0")/../.."
 
-DB="${CRAG_DB:-$HOME/rag-test.db}"
+CORPUS="tests/manual/corpus_it"
 TSV="tests/manual/answers_it.tsv"
 CRAG="./crag"
 EMBED_URL="${CRAG_EMBED_URL:-http://localhost:11434/api/embeddings}"
 GEN_MODEL="${CRAG_GEN_MODEL:-qwen2.5:3b}"
 GATE="${CRAG_GEN_MIN_SCORE:-0.38}"      # bge-m3-calibrated; default CLI is 0.60
 GEN_DEFAULT_GATE="0.60"                 # the mxbai-era default, for the demo
+
+# Use the caller's index if given, else (re)build one from the bundled corpus.
+DB="${CRAG_DB:-/tmp/crag_answers_it.db}"
+SELF_CORPUS=0; [ -z "${CRAG_DB:-}" ] && SELF_CORPUS=1
 
 export CRAG_EMBED_BACKEND=ollama CRAG_EMBED_MODEL=bge-m3 CRAG_EMBED_URL="$EMBED_URL"
 export CRAG_GEN_BACKEND=ollama CRAG_GEN_MODEL="$GEN_MODEL"
@@ -48,25 +53,31 @@ no(){ printf '%sFAIL%s' "$R" "$Z"; }
 [ -x "$CRAG" ] || make -s >/dev/null
 if ! curl -sf --max-time 2 "http://localhost:11434/api/tags" >/dev/null; then
     echo "${R}ollama not reachable at :11434${Z}"; exit 2; fi
-if [ ! -f "$DB" ]; then
-    echo "${R}no index at $DB${Z} — set CRAG_DB or reindex with bge-m3:"
-    echo "  CRAG_EMBED_BACKEND=ollama CRAG_EMBED_MODEL=bge-m3 ./crag reindex ~/rag-test-data --db $DB --url $EMBED_URL"
-    exit 2; fi
 if ! curl -sf --max-time 2 http://localhost:11434/api/tags | grep -q "\"$GEN_MODEL\""; then
     echo "${R}gen model '$GEN_MODEL' not in ollama${Z} — pull it: ollama pull $GEN_MODEL"; exit 2; fi
+if [ "$SELF_CORPUS" -eq 1 ]; then
+    [ -d "$CORPUS" ] || { echo "${R}corpus not found: $CORPUS${Z}"; exit 2; }
+    rm -f "$DB"
+    "$CRAG" index "$CORPUS" --db "$DB" --ext md >/dev/null \
+        || { echo "${R}indexing $CORPUS failed${Z}"; exit 2; }
+elif [ ! -f "$DB" ]; then
+    echo "${R}no index at CRAG_DB=$DB${Z}"; exit 2; fi
 
 echo "${B}=== cRAG end-to-end answer-quality test ===${Z}"
-echo "db:    ${C}$DB${Z}    embed: ${C}bge-m3${Z}    gen: ${C}$GEN_MODEL${Z}    gate: ${C}$GATE${Z}"
+src_label="$([ "$SELF_CORPUS" -eq 1 ] && echo "$CORPUS (bundled)" || echo "$DB")"
+echo "corpus: ${C}$src_label${Z}    embed: ${C}bge-m3${Z}    gen: ${C}$GEN_MODEL${Z}    gate: ${C}$GATE${Z}"
 echo
 
-# Run a cosine query, print top-1 "score<TAB>category". Capture the JSON
+# Run a cosine query, print top-1 "score<TAB>doc-stem". Capture the JSON
 # once — two greps on a live pipe would race on the same consumed stdin.
+# The stem is the source basename without extension (e.g. ".../ztl.md" -> ztl).
 top1() {  # $1=query
-    local j sc cat
+    local j sc src stem
     j="$("$CRAG" query "$1" --db "$DB" -k 3 --search cosine --format json 2>/dev/null)"
     sc=$(printf '%s' "$j"  | grep -o '"score":[0-9.]*' | head -1 | cut -d: -f2)
-    cat=$(printf '%s' "$j" | grep -o '/doc_[0-9]*_[a-z]*\.txt' | head -1 | sed 's/.*_//;s/\.txt//')
-    printf '%s\t%s' "${sc:-0}" "${cat:-none}"
+    src=$(printf '%s' "$j" | grep -o '"source":"[^"]*"' | head -1 | sed 's/.*"source":"//; s/".*//')
+    stem=$(basename "$src" 2>/dev/null | sed 's/\.[^.]*$//')
+    printf '%s\t%s' "${sc:-0}" "${stem:-none}"
 }
 # Generate an answer (single line), at a given gate.
 gen() {  # $1=query  $2=gate
@@ -76,10 +87,15 @@ gen() {  # $1=query  $2=gate
 
 ng=0; grounded=0; answered=0; correct=0      # answerable tallies
 no=0; refused=0                              # ooc tallies
+nt=0; nabst=0                                # within-corpus-unanswerable tallies
 demo_q=""; demo_cos="9"                      # lowest-cosine answerable in [GATE,0.60)
 
+# A response counts as "abstained" if it declines instead of inventing a fact —
+# the CLI refusal, or the model itself saying the detail isn't in the context.
+ABSTAIN_RE='not in context|non (è |e |viene )?(specificat|indicat|riportat|present|precisat|fornit|menzionat|disponibil)|nessun. informazion'
+
 while IFS=$'\t' read -r type cat fact q; do
-    case "$type" in ans|ooc) ;; *) continue ;; esac   # skip comments/blanks
+    case "$type" in ans|ooc|nca) ;; *) continue ;; esac   # skip comments/blanks
     [ -z "${q:-}" ] && continue
 
     read -r cos rcat < <(printf '%s' "$(top1 "$q")")
@@ -99,6 +115,13 @@ while IFS=$'\t' read -r type cat fact q; do
             "$M·$Z" "$([ $g = 1 ] && ok || no)" "$([ $a = 1 ] && ok || no)" \
             "$([ $c = 1 ] && ok || no)" "$D" "$cos" "$rcat" "$Z"
         printf '   %sQ:%s %s\n   %sA:%s %.140s\n\n' "$C" "$Z" "$q" "$D" "$Z" "$ans"
+    elif [ "$type" = "nca" ]; then
+        # Within-corpus unanswerable: the right doc IS retrieved, but the asked
+        # fact isn't in it. A good system abstains; a hallucinator invents.
+        nt=$((nt+1))
+        ab=0; printf '%s' "$ans" | grep -qiE "$ABSTAIN_RE" && { ab=1; nabst=$((nabst+1)); }
+        printf '%s abstain=%s  %scos=%s ->%s (fact not in corpus)%s\n   %sQ:%s %s\n   %sA:%s %.140s\n\n' \
+            "$M·$Z" "$([ $ab = 1 ] && ok || no)" "$D" "$cos" "$rcat" "$Z" "$C" "$Z" "$q" "$D" "$Z" "$ans"
     else
         no=$((no+1))
         r=0; [ "$is_refusal" -eq 1 ] && { r=1; refused=$((refused+1)); }
@@ -111,6 +134,7 @@ done < "$TSV"
 echo "${B}=== scorecard ===${Z}"
 printf '  answerable (%d): grounded %s%d/%d%s  answered %s%d/%d%s  correct %s%d/%d%s\n' \
     "$ng" "$B" "$grounded" "$ng" "$Z" "$B" "$answered" "$ng" "$Z" "$B" "$correct" "$ng" "$Z"
+printf '  within-corpus unanswerable (%d): abstained %s%d/%d%s\n' "$nt" "$B" "$nabst" "$nt" "$Z"
 printf '  out-of-corpus (%d): refused %s%d/%d%s\n' "$no" "$B" "$refused" "$no" "$Z"
 
 # --- gen-gate calibration demonstration ------------------------------------
