@@ -171,6 +171,41 @@ static void test_extract_floats_null_inputs(void) {
     TEST_ASSERT(json_extract_floats("{}", "\"k\"", v,    2, NULL) == -1);
 }
 
+/* ---- gen_min_score_resolve: embedder-aware generation gate ------------- */
+static int feq(float a, float b) { float d = a - b; return (d < 0 ? -d : d) < 1e-6f; }
+
+static void test_gen_gate_env_override_wins(void) {
+    /* A clean float overrides everything, including the model default. */
+    TEST_ASSERT(feq(gen_min_score_resolve("0.42", "bge-m3", 0.60f), 0.42f));
+    TEST_ASSERT(feq(gen_min_score_resolve("0.0", "mxbai", 0.60f), 0.0f));
+    TEST_ASSERT(feq(gen_min_score_resolve("-1", NULL, 0.60f), -1.0f));
+}
+
+static void test_gen_gate_bge_default(void) {
+    /* bge-m3's low cosine floor -> 0.38, regardless of the fallback, and
+       robust to ollama/llama.cpp decorations + case. */
+    TEST_ASSERT(feq(gen_min_score_resolve(NULL, "bge-m3", 0.60f), 0.38f));
+    TEST_ASSERT(feq(gen_min_score_resolve(NULL, "bge-m3:latest", 0.60f), 0.38f));
+    TEST_ASSERT(feq(gen_min_score_resolve(NULL, "registry/BGE-M3", 0.60f), 0.38f));
+    TEST_ASSERT(feq(gen_min_score_resolve("", "bge-m3", 0.60f), 0.38f));
+}
+
+static void test_gen_gate_fallback_preserved(void) {
+    /* mxbai and unknown/unset models keep the caller's fallback unchanged —
+       no behaviour regression for existing deployments. */
+    TEST_ASSERT(feq(gen_min_score_resolve(NULL, "mxbai-embed-large", 0.60f), 0.60f));
+    TEST_ASSERT(feq(gen_min_score_resolve(NULL, "nomic-embed-text", 0.60f), 0.60f));
+    TEST_ASSERT(feq(gen_min_score_resolve(NULL, NULL, 0.60f), 0.60f));
+}
+
+static void test_gen_gate_invalid_env_falls_through(void) {
+    /* Garbage/trailing-junk env must NOT silently become 0.0 (the old atof
+       bug that disabled the gate) — it falls through to model/fallback. */
+    TEST_ASSERT(feq(gen_min_score_resolve("garbage", "bge-m3", 0.60f), 0.38f));
+    TEST_ASSERT(feq(gen_min_score_resolve("0.4x", "mxbai", 0.60f), 0.60f));
+    TEST_ASSERT(feq(gen_min_score_resolve("0.4x", NULL, 0.55f), 0.55f));
+}
+
 int main(void) {
     fprintf(stderr, "test_util:\n");
     TEST_RUN(test_escape_plain_ascii_is_identity);
@@ -191,5 +226,9 @@ int main(void) {
     TEST_RUN(test_extract_floats_first_match_wins);
     TEST_RUN(test_extract_floats_empty_array_is_error);
     TEST_RUN(test_extract_floats_null_inputs);
+    TEST_RUN(test_gen_gate_env_override_wins);
+    TEST_RUN(test_gen_gate_bge_default);
+    TEST_RUN(test_gen_gate_fallback_preserved);
+    TEST_RUN(test_gen_gate_invalid_env_falls_through);
     TEST_DONE();
 }

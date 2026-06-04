@@ -99,3 +99,42 @@ int json_extract_floats(const char *json, const char *key,
     *out_n = n;
     return n > 0 ? 0 : -1;
 }
+
+/* Case-insensitive "does haystack contain needle?" — needle is ASCII (model
+   name fragments), so a byte-wise lower-fold is enough. */
+static int contains_ci(const char *haystack, const char *needle) {
+    if (!haystack || !needle || !*needle) return 0;
+    size_t nlen = strlen(needle);
+    for (const char *h = haystack; *h; h++) {
+        size_t i = 0;
+        while (i < nlen && h[i]) {
+            unsigned char a = (unsigned char)h[i], b = (unsigned char)needle[i];
+            if (a >= 'A' && a <= 'Z') a = (unsigned char)(a - 'A' + 'a');
+            if (b >= 'A' && b <= 'Z') b = (unsigned char)(b - 'A' + 'a');
+            if (a != b) break;
+            i++;
+        }
+        if (i == nlen) return 1;
+    }
+    return 0;
+}
+
+/* Measured per-embedder generation-gate defaults. Only models whose cosine
+   distribution has actually been measured belong here — a guessed value is
+   worse than honestly returning the caller's fallback. */
+float gen_min_score_resolve(const char *env_override, const char *embed_model,
+                            float fallback) {
+    /* 1. Explicit operator override wins, if it parses cleanly. */
+    if (env_override && *env_override) {
+        char *end = NULL;
+        float v = strtof(env_override, &end);
+        if (end != env_override && *end == '\0') return v;
+        /* malformed: ignore and fall through (atof would've returned 0.0,
+           silently disabling the gate — worse than the model default). */
+    }
+    /* 2. Measured per-model default. bge-m3's distribution sits ~0.2 below
+       mxbai's, so the fallback (mxbai-era 0.60) would refuse genuine answers. */
+    if (contains_ci(embed_model, "bge-m3")) return 0.38f;
+    /* 3. mxbai and unknown models keep the conservative fallback. */
+    return fallback;
+}

@@ -155,8 +155,13 @@ int cmd_query(int argc, char **argv) {
          * to "refuse iff zero results" and rely on the RAG_SYSTEM prompt to
          * catch off-topic context. Override threshold via CRAG_GEN_MIN_SCORE.
          */
-        const char *thresh_env = getenv("CRAG_GEN_MIN_SCORE");
-        float min_score = thresh_env ? (float)atof(thresh_env) : DEFAULT_MIN_SCORE;
+        /* Gate threshold is embedder-aware: CRAG_GEN_MIN_SCORE overrides, else
+         * a measured per-model default (bge-m3 -> 0.38; the 0.60 fallback is
+         * mxbai-calibrated and would wrongly refuse genuine bge-m3 answers). */
+        const char *thresh_env  = getenv("CRAG_GEN_MIN_SCORE");
+        const char *embed_model = getenv("CRAG_EMBED_MODEL");
+        float min_score = gen_min_score_resolve(thresh_env, embed_model,
+                                                DEFAULT_MIN_SCORE);
         float top_score = (n > 0) ? (mode_hybrid ? hscores[0].fusion : scores[0]) : 0.0f;
         int   gate_active = mode_cosine;
 
