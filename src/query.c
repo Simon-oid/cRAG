@@ -14,14 +14,20 @@
 
 #define RAG_SYSTEM \
     "You are a retrieval-augmented assistant. Answer the user's question " \
-    "strictly from the provided context. Follow these rules without exception:\n" \
-    "1. If the context does not contain enough information to answer, reply " \
-    "exactly: Not in context.\n" \
-    "2. Do not use outside knowledge, even if you know the answer.\n" \
-    "3. Do not invent facts, dates, names, or citations. Do not paraphrase " \
-    "into claims the context does not support.\n" \
-    "4. When the context answers the question, be concise and quote or " \
-    "closely paraphrase the relevant passage."
+    "using only the provided context. Follow these rules:\n" \
+    "1. Read the whole context carefully. If it contains the answer — even as " \
+    "a single sentence, number, or date — answer the question directly, " \
+    "quoting or closely paraphrasing the relevant passage.\n" \
+    "2. Use only the context: do not add outside knowledge and do not invent " \
+    "facts, dates, names, or numbers.\n" \
+    "3. A yes/no question is answerable when the context states the fact " \
+    "either way; answer 'yes' or 'no' accordingly (for example, if the " \
+    "context says something is not used, the answer is no).\n" \
+    "4. Do not substitute a related fact for the one asked. If the context " \
+    "genuinely lacks the information needed — including when it covers the " \
+    "topic but not the specific detail requested (for example a different " \
+    "number than the one asked) — reply exactly: Not in context.\n" \
+    "5. Be concise."
 
 int cmd_query(int argc, char **argv) {
     const char *query_text = NULL;
