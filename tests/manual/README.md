@@ -98,9 +98,16 @@ then for each question in `answers_it.tsv` runs query → retrieve (cosine) →
 generate (ollama) and grades, across four dimensions:
 
 - **fact lookups** (`ans`): *grounded* (top-1 doc is the expected one),
-  *answered* (no spurious refusal), *correct* (answer matches a fact ERE).
-  Includes precision distractors (annual vs monthly fare) and a
-  comprehension/negation case (do the cameras use facial recognition? → "no").
+  *answered* (no spurious refusal), *correct* (answer matches a fact ERE), and
+  *faithful* — every claim in the answer is supported by the **retrieved
+  context** (the RAG-triad *Faithfulness* metric), graded by an LLM judge at
+  temperature 0 (needs `jq`; auto-skipped if absent, override the judge with
+  `CRAG_JUDGE_MODEL`, disable with `CRAG_FAITHFULNESS=0`). `faithful` is
+  distinct from `correct`: `correct` checks the answer against a hand-written
+  expected fact, `faithful` checks it against what was *actually* retrieved —
+  catching a right-sounding answer the context never supported (and the converse
+  the regex misses). Includes precision distractors (annual vs monthly fare) and
+  a comprehension/negation case (do the cameras use facial recognition? → "no").
 - **within-corpus unanswerable** (`nca`): the right doc is retrieved but the
   asked fact isn't in it — a good system **abstains**, a hallucinator invents.
 - **out-of-corpus** (`ooc`): graded on **refusal** ("Not in context.").

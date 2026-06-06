@@ -26,6 +26,7 @@ tests/eval/results.csv
 # Editor / tool state
 .claude/
 .gemini/
+graphify-out/
 
 # Personal working notes
 todo.md
