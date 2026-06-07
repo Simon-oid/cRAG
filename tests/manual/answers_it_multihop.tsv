@@ -1,0 +1,13 @@
+# Cross-doc / multi-hop probe set for the Vallenova corpus (council #6, item D).
+# Each question genuinely requires facts from >=2 DISTINCT docs (no single doc
+# answers it). Format: required-doc-basenames (pipe-separated) \t question.
+# Measured by multihop_coverage.py: does retrieval surface BOTH docs at top-k,
+# and does the generated answer combine both facts?
+ricarica_ev|ztl	Con un'auto elettrica quanto costa ricaricarla alle colonnine pubbliche comunali e quanto devo pagare per entrare nella ZTL del centro storico?
+illuminazione|bilancio	Di quanto e calato il consumo energetico grazie ai nuovi lampioni a LED e in quale capitolo di spesa del programma Vallenova Smart 2026 rientra l'efficienza energetica?
+ricarica_ev|bilancio	Quante colonnine di ricarica per veicoli elettrici ci sono e quanti milioni di euro del bilancio sono destinati alla mobilita sostenibile che le comprende?
+aria|trasporti	Nei giorni di allerta smog il Comune potenzia il trasporto pubblico: con quale tipo di flotta e su quante linee urbane e gestito normalmente l'autobus?
+videosorveglianza|wifi	Per quanti giorni vengono conservate le immagini della videosorveglianza e come vengono trattati i log di connessione della rete WiFi pubblica?
+illuminazione|app_cittadino	Come posso segnalare un lampione guasto e quali altri tipi di problemi posso inviare con l'app del cittadino?
+rifiuti|ztl	Qual e la multa per l'abbandono di rifiuti sul suolo pubblico e quanto costa invece la sanzione per chi entra in ZTL senza autorizzazione?
+sportello|app_cittadino	Con quale identita digitale accedo allo sportello digitale dei servizi e quale app uso per inviare una segnalazione georeferenziata?
