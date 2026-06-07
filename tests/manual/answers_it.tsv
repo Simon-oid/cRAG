@@ -82,3 +82,78 @@ ooc	-	-	qual e la ricetta della vera pizza napoletana
 ooc	-	-	chi ha vinto il festival di Sanremo nel 2024
 ooc	-	-	come si configura un server web nginx su linux
 ooc	-	-	quanto e alta la torre Eiffel a Parigi
+
+# =====================================================================
+# WIDENING (item E re-measure, 2026-06-07): the original 32-answerable
+# set decided item (E) on a single-question swing, within measurement
+# noise per the council. Roughly doubles the answerable set, heavy on
+# precision-distractor questions (the doc holds several similar numbers,
+# the question pins one) — exactly the distraction failure mode that
+# motivated (E) — plus more abstention/refusal rows for balance.
+# =====================================================================
+
+# --- ZTL (more) ---
+ans	ztl	\b12\b	quanti varchi elettronici controllano gli accessi alla ZTL
+ans	ztl	10:00|7:30	in quali orari e consentito il carico e scarico merci in centro
+ans	ztl	\b15\b	quanto costa al giorno un permesso temporaneo per un cantiere in ZTL
+
+# --- Illuminazione (more) ---
+ans	illuminazione	8\.?400	quanti punti luce sono stati convertiti alla tecnologia LED
+ans	illuminazione	1[.,]1|milion	quanto risparmia il comune ogni anno in bolletta grazie ai LED
+ans	illuminazione	\b48\b	in quante ore in media viene riparato un lampione guasto
+
+# --- Rifiuti (more) ---
+ans	rifiuti	vener	in che giorno si raccolgono la carta e il cartone
+ans	rifiuti	mercoled	quando va esposto il vetro per la raccolta
+ans	rifiuti	\b80\b	qual e l'obiettivo di raccolta differenziata da raggiungere entro il 2027
+ans	rifiuti	\b500\b	quanto e la multa per chi abbandona batterie o vernici
+
+# --- Aria (more) ---
+ans	aria	\b9\b|nove	da quante centraline e composta la rete di monitoraggio dell'aria
+ans	aria	8:30|18:30	in quale fascia oraria scatta il blocco dei veicoli diesel
+ans	aria	tre giorni|3 giorni|consecutiv	dopo quanti giorni di superamento del PM2.5 scatta il blocco del traffico
+
+# --- Trasporti (more) ---
+ans	trasporti	\b6\b|sei	su quante linee urbane viaggiano gli autobus elettrici
+ans	trasporti	\b90\b	per quanti minuti resta valido il biglietto singolo dopo la convalida
+ans	trasporti	\b40\b	di quanto e lo sconto sulla tariffa per gli studenti under 26
+
+# --- WiFi (more) ---
+ans	wifi	\b140\b	quanti hotspot copre la rete wifi pubblica del comune
+ans	wifi	4 ore|quattro	quanto dura al massimo una singola sessione di wifi pubblico
+
+# --- Videosorveglianza (more) ---
+ans	videosorveglianza	\b220\b	quante telecamere compongono il sistema di videosorveglianza
+ans	videosorveglianza	polizia local|autorit	chi puo accedere alle registrazioni delle telecamere
+
+# --- Ricarica EV (more) ---
+ans	ricarica_ev	\b48\b	quante colonnine di ricarica pubbliche ci sono in totale in citta
+ans	ricarica_ev	\b90\b	per quanti minuti la sosta resta gratuita mentre si ricarica l'auto
+ans	ricarica_ev	rinnovabil|\b100\b	con che tipo di energia sono alimentate le colonnine
+
+# --- App del cittadino (more) ---
+ans	app_cittadino	12\.?000|dodicimila	quante segnalazioni ha gestito il comune nel 2025
+ans	app_cittadino	spid|cie|pagopa	come si accede all'app del cittadino
+
+# --- Bilancio (more) ---
+ans	bilancio	5 milion|cinque milion	quanti fondi sono destinati alla mobilita sostenibile
+ans	bilancio	\b68\b	che percentuale del budget risultava impegnata a fine 2025
+ans	bilancio	\b35\b	che quota del programma e coperta dal bilancio comunale
+
+# --- Verde (more) ---
+ans	verde	\b38\b	su quanti ettari si estende il verde pubblico di Vallenova
+ans	verde	\b800\b	quanti nuovi alberi sono stati piantati nel 2025
+ans	verde	\b220\b	quanti sensori di umidita regolano l'irrigazione intelligente
+
+# --- Sportello (more) ---
+ans	sportello	spid|cie|elettronica	con quale identita digitale si accede allo sportello online
+ans	sportello	\b71\b	che percentuale di pratiche e stata avviata online nel 2025
+
+# --- Widening: more within-corpus unanswerable (abstain, don't invent) ---
+nca	illuminazione	-	quanti lampioni si sono guastati in tutto nel corso del 2025
+nca	wifi	-	quanti utenti si collegano ogni giorno alla rete wifi pubblica
+nca	bilancio	-	quanto e stato speso esattamente solo per le piste ciclabili
+
+# --- Widening: more out-of-corpus (must refuse) ---
+ooc	-	-	qual e la capitale dell'Australia
+ooc	-	-	quanti giocatori ci sono in una squadra di calcio

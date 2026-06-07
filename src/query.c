@@ -186,9 +186,34 @@ int cmd_query(int argc, char **argv) {
             goto cleanup;
         }
 
+        /* Generation-context selection (TODO item E): CRAG_GEN_K caps the prompt
+         * context to the top-N retrieved chunks, decoupled from --top-k which
+         * still drives retrieval + display. A larger gen model (e.g. qwen2.5:7b)
+         * can be misled into a wrong/over-cautious answer by a low-confidence
+         * tail chunk; capping the context removes that distractor. Results are
+         * sorted by score descending, so this is a prefix cut. Env-gated, OFF by
+         * default (unset = feed all n, the prior behavior).
+         *
+         * Measured on the widened Italian answer harness (65 answerable Qs,
+         * tests/manual/answers.sh): CRAG_GEN_K=2 lifts 7b correct 63->64 with
+         * zero regression on the default 3b (correct/abstain/refuse all
+         * unchanged). CRAG_GEN_K=1 is too aggressive — it drops a 3b abstention
+         * (invents a fact from a single chunk) for no correctness gain, so 2 is
+         * the recommended floor. The effect is small and model-dependent, hence
+         * opt-in rather than a default change. */
+        int gen_n = n;
+        const char *gen_k_env = getenv("CRAG_GEN_K");
+        if (gen_k_env && *gen_k_env) {
+            int gk = atoi(gen_k_env);
+            if (gk > 0 && gk < gen_n) gen_n = gk;
+        }
+        if (gen_n < n)
+            fprintf(stderr, "query: generating from top %d of %d retrieved "
+                            "chunks\n", gen_n, n);
+
         /* build context from results */
         size_t ctx_sz = 1;
-        for (int i = 0; i < n; i++) {
+        for (int i = 0; i < gen_n; i++) {
             size_t tl = strlen(results[i].text);
             if (tl > (size_t)-1 - ctx_sz - 4) { rc = 1; goto cleanup; }
             ctx_sz += tl + 2;
@@ -196,7 +221,7 @@ int cmd_query(int argc, char **argv) {
         char *context = malloc(ctx_sz);
         if (!context) { rc = 1; goto cleanup; }
         char *wp = context;
-        for (int i = 0; i < n; i++) {
+        for (int i = 0; i < gen_n; i++) {
             size_t tl = strlen(results[i].text);
             memcpy(wp, results[i].text, tl); wp += tl;
             *wp++ = '\n'; *wp++ = '\n';
