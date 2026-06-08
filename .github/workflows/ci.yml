@@ -1,0 +1,39 @@
+name: ci
+
+# Runs the full offline robustness gate on every push / PR to main.
+# `make check` = plain tests -> valgrind -> ASan/UBSan -> TSan, plus the
+# eval-ci retrieval-quality regression floor. It needs no embedder, no network,
+# and no secrets (the toy hashed embedder + checked-in synthetic corpus stand
+# in), so it runs unmodified in CI.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs on the same ref to save runner minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config libcurl4-openssl-dev valgrind
+
+      # Newer runner kernels default vm.mmap_rnd_bits=32, which the ASan
+      # shadow-memory mapping can't satisfy and aborts at startup. 28 is the
+      # value ASan expects. Best-effort; harmless where already compatible.
+      - name: Work around ASan ASLR entropy
+        run: sudo sysctl -w vm.mmap_rnd_bits=28 || true
+
+      - name: make check (tests + valgrind + ASan/UBSan + TSan + eval-ci)
+        run: make check
