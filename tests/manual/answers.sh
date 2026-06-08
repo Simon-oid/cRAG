@@ -7,7 +7,7 @@
 # grounded. This does, with a scorecard, so it can gate later changes.
 #
 # For each question in answers_it.tsv it runs query -> retrieve (bge-m3,
-# cosine) -> generate (ollama) and grades four things automatically:
+# cosine) -> generate (ollama) and grades five things automatically:
 #   grounded  the top-1 retrieved doc IS the expected document (by basename)
 #   answered  the model produced an answer (did not spuriously refuse)
 #   correct   the answer contains the expected fact (case-insensitive ERE)
@@ -19,6 +19,18 @@
 #             against what was ACTUALLY retrieved — catching a right-sounding
 #             answer the context never supported (hallucination), and the
 #             converse (a faithful answer the regex just missed).
+#   relevant  the answer DIRECTLY and completely addresses the question, with no
+#             digression, padding, or partial dodge (the RAG-triad "Answer
+#             Relevancy" metric — the third Triad vertex, orthogonal to the two
+#             above: faithful=grounded-in-context, correct=matches-the-fact,
+#             relevant=actually-answers-what-was-asked). Same LLM-judge-at-temp-0
+#             pattern, judging ANSWER-vs-QUESTION (not the context). jq-gated.
+#             NOTE (measured 2026-06-08): relevancy is a SUBTLER judgment than
+#             faithfulness and needs a CAPABLE judge. qwen2.5:3b is unreliable
+#             as the relevancy judge — it false-flags squarely-on-target answers
+#             as IRRELEVANT (3b judge: 40/65; 7b judge on the same answers: far
+#             higher). Use CRAG_JUDGE_MODEL=qwen2.5:7b (or stronger) for a
+#             trustworthy relevancy number; a weak judge UNDER-reports it.
 # and for out-of-corpus questions, that the model REFUSES ("Not in context.")
 # instead of hallucinating.
 #
@@ -31,8 +43,9 @@
 #   CRAG_DB             grade THIS bge-m3 index instead of the bundled corpus
 #   CRAG_GEN_MODEL      ollama chat model       (default: qwen2.5:3b)
 #   CRAG_GEN_MIN_SCORE  gen confidence gate     (default: 0.38, bge-m3-tuned)
-#   CRAG_JUDGE_MODEL    faithfulness judge model (default: CRAG_GEN_MODEL)
+#   CRAG_JUDGE_MODEL    faithfulness/relevancy judge model (default: CRAG_GEN_MODEL)
 #   CRAG_FAITHFULNESS   set 0 to skip the LLM faithfulness judge (default: 1)
+#   CRAG_RELEVANCY      set 0 to skip the LLM answer-relevancy judge (default: 1)
 
 set -uo pipefail
 cd "$(dirname "$0")/../.."
@@ -44,10 +57,11 @@ EMBED_URL="${CRAG_EMBED_URL:-http://localhost:11434/api/embeddings}"
 GEN_MODEL="${CRAG_GEN_MODEL:-qwen2.5:3b}"
 GATE="${CRAG_GEN_MIN_SCORE:-0.38}"      # bge-m3-calibrated; default CLI is 0.60
 GEN_DEFAULT_GATE="0.60"                 # the mxbai-era default, for the demo
-JUDGE_MODEL="${CRAG_JUDGE_MODEL:-$GEN_MODEL}"   # faithfulness LLM judge
+JUDGE_MODEL="${CRAG_JUDGE_MODEL:-$GEN_MODEL}"   # faithfulness/relevancy LLM judge
 FAITH="${CRAG_FAITHFULNESS:-1}"         # 1 = run the faithfulness judge
+REL="${CRAG_RELEVANCY:-1}"              # 1 = run the answer-relevancy judge
 HAVE_JQ=0; command -v jq >/dev/null 2>&1 && HAVE_JQ=1
-[ "$HAVE_JQ" -eq 1 ] || FAITH=0         # judge needs jq to marshal JSON safely
+[ "$HAVE_JQ" -eq 1 ] || { FAITH=0; REL=0; }   # judges need jq to marshal JSON safely
 
 # Use the caller's index if given, else (re)build one from the bundled corpus.
 DB="${CRAG_DB:-/tmp/crag_answers_it.db}"
@@ -80,8 +94,9 @@ elif [ ! -f "$DB" ]; then
 echo "${B}=== cRAG end-to-end answer-quality test ===${Z}"
 src_label="$([ "$SELF_CORPUS" -eq 1 ] && echo "$CORPUS (bundled)" || echo "$DB")"
 echo "corpus: ${C}$src_label${Z}    embed: ${C}bge-m3${Z}    gen: ${C}$GEN_MODEL${Z}    gate: ${C}$GATE${Z}"
-if [ "$FAITH" -eq 1 ]; then echo "faithfulness judge: ${C}$JUDGE_MODEL${Z} ${D}(temp 0)${Z}"
-else echo "faithfulness judge: ${Y}off${Z}${D}$([ "$HAVE_JQ" -eq 1 ] || echo ' (jq not found)')${Z}"; fi
+if [ "$FAITH" -eq 1 ] || [ "$REL" -eq 1 ]; then
+    echo "RAG-triad judges: ${C}$JUDGE_MODEL${Z} ${D}(temp 0)${Z}  faithfulness ${C}$([ "$FAITH" -eq 1 ] && echo on || echo off)${Z}  relevancy ${C}$([ "$REL" -eq 1 ] && echo on || echo off)${Z}"
+else echo "RAG-triad judges: ${Y}off${Z}${D}$([ "$HAVE_JQ" -eq 1 ] || echo ' (jq not found)')${Z}"; fi
 echo
 
 # Run a cosine query, print top-1 "score<TAB>doc-stem". Capture the JSON
@@ -128,9 +143,31 @@ judge_faithful() {  # $1=context  $2=answer
     printf '%s' "$resp" | grep -qiE '(^|[^a-z])grounded' && return 0
     return 1
 }
+# LLM-as-judge answer-relevancy (RAG-triad "Answer Relevancy"): does the ANSWER
+# directly and completely address the QUESTION, with no digression, padding, or
+# partial dodge? This is orthogonal to faithfulness — it compares answer-vs-
+# question, NOT answer-vs-context — so a perfectly grounded answer that talks
+# around the question still scores irrelevant. Temp 0 for reproducibility.
+# Returns 0 = relevant, 1 = irrelevant/partial, 2 = judge unavailable.
+JUDGE_REL_SYS='You are a strict grader for question-answering. You are given a QUESTION and an ANSWER. Judge ONLY relevancy: does the ANSWER directly and completely address what the QUESTION asks? Ignore whether the answer is factually true. Penalize digressions, padding, hedging, and partial answers that dodge the actual question. An ANSWER that explicitly declines because the information is unavailable is RELEVANT (it correctly addresses an unanswerable question). Reply RELEVANT if the answer squarely addresses the question, or IRRELEVANT if it does not. Reply with EXACTLY one word: RELEVANT or IRRELEVANT.'
+judge_relevant() {  # $1=question  $2=answer
+    [ "$REL" -eq 1 ] || return 2
+    local usr body resp
+    usr="$(printf 'QUESTION:\n%s\n\nANSWER:\n%s' "$1" "$2")"
+    body="$(jq -n --arg m "$JUDGE_MODEL" --arg s "$JUDGE_REL_SYS" --arg p "$usr" \
+        '{model:$m, system:$s, prompt:$p, stream:false, options:{temperature:0}}')" || return 2
+    resp="$(curl -sf --max-time 30 http://localhost:11434/api/generate -d "$body" 2>/dev/null \
+        | jq -r '.response // empty' 2>/dev/null)"
+    [ -z "$resp" ] && return 2
+    # "IRRELEVANT" contains the substring "relevant"; anchor on the full word so
+    # only a real RELEVANT verdict passes (IRRELEVANT is rejected by the prefix).
+    printf '%s' "$resp" | grep -qiE '(^|[^a-z])relevant' && return 0
+    return 1
+}
 
 ng=0; grounded=0; answered=0; correct=0      # answerable tallies
 faithful=0; fjudged=0                         # faithfulness: grounded / judged
+relevant=0; rjudged=0                         # answer-relevancy: relevant / judged
 no=0; refused=0                              # ooc tallies
 nt=0; nabst=0                                # within-corpus-unanswerable tallies
 demo_q=""; demo_cos="9"                      # lowest-cosine answerable in [GATE,0.60)
@@ -155,19 +192,23 @@ while IFS=$'\t' read -r type cat fact q; do
         # Faithfulness: judge the produced answer against the retrieved context.
         # Only meaningful when the model actually answered (a refusal is graded
         # by `answered`, not here). '—' when answered but the judge is off/down.
-        fcell="${D}—${Z}"
+        fcell="${D}—${Z}"; rcell="${D}—${Z}"
         if [ "$a" -eq 1 ]; then
             judge_faithful "$(ctx_of "$q")" "$ans"; fr=$?
             if   [ "$fr" -eq 0 ]; then fcell="$(ok)"; faithful=$((faithful+1)); fjudged=$((fjudged+1))
             elif [ "$fr" -eq 1 ]; then fcell="$(no)"; fjudged=$((fjudged+1)); fi
+            # Answer Relevancy: judge the answer against the QUESTION (not ctx).
+            judge_relevant "$q" "$ans"; rr=$?
+            if   [ "$rr" -eq 0 ]; then rcell="$(ok)"; relevant=$((relevant+1)); rjudged=$((rjudged+1))
+            elif [ "$rr" -eq 1 ]; then rcell="$(no)"; rjudged=$((rjudged+1)); fi
         fi
         # track a query the default 0.60 gate would wrongly refuse
         if [ "$a" -eq 1 ] && awk "BEGIN{exit !($cos>=$GATE && $cos<$GEN_DEFAULT_GATE)}"; then
             if awk "BEGIN{exit !($cos<$demo_cos)}"; then demo_cos="$cos"; demo_q="$q"; fi
         fi
-        printf '%s ground=%s ans=%s correct=%s faith=%s  %scos=%s ->%s%s\n' \
+        printf '%s ground=%s ans=%s correct=%s faith=%s relev=%s  %scos=%s ->%s%s\n' \
             "$M·$Z" "$([ $g = 1 ] && ok || no)" "$([ $a = 1 ] && ok || no)" \
-            "$([ $c = 1 ] && ok || no)" "$fcell" "$D" "$cos" "$rcat" "$Z"
+            "$([ $c = 1 ] && ok || no)" "$fcell" "$rcell" "$D" "$cos" "$rcat" "$Z"
         printf '   %sQ:%s %s\n   %sA:%s %.140s\n\n' "$C" "$Z" "$q" "$D" "$Z" "$ans"
     elif [ "$type" = "nca" ]; then
         # Within-corpus unanswerable: the right doc IS retrieved, but the asked
@@ -193,6 +234,13 @@ if [ "$FAITH" -eq 1 ]; then
         "$fjudged" "$answered" "$B" "$faithful" "$fjudged" "$Z"
 else
     printf '  faithfulness: %sskipped%s (set CRAG_FAITHFULNESS=1%s)\n' \
+        "$Y" "$Z" "$([ "$HAVE_JQ" -eq 1 ] && echo "" || echo " and install jq")"
+fi
+if [ "$REL" -eq 1 ]; then
+    printf '  answer relevancy (judged %d of %d answered): relevant %s%d/%d%s\n' \
+        "$rjudged" "$answered" "$B" "$relevant" "$rjudged" "$Z"
+else
+    printf '  answer relevancy: %sskipped%s (set CRAG_RELEVANCY=1%s)\n' \
         "$Y" "$Z" "$([ "$HAVE_JQ" -eq 1 ] && echo "" || echo " and install jq")"
 fi
 printf '  within-corpus unanswerable (%d): abstained %s%d/%d%s\n' "$nt" "$B" "$nabst" "$nt" "$Z"
