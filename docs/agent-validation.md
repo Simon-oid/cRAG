@@ -213,3 +213,66 @@ the next substrate to build if/when multi-hop retrieval becomes a real need
 (it isn't yet: the live host is Claude, which can issue its own follow-up
 `crag_search` calls — agent-driven iterative retrieval beats a graph index for
 this consumer).
+
+## Full 15-Q playbook — Claude-as-host, end-to-end (2026-06-08)
+
+The 4.3 first-light run (above) scored *retrieval rank* with Claude calling
+`crag_search` but did not exercise Claude's own **abstention and reasoning** as
+the host generator. After the Tier-4 hardening backlog closed (4.4/4.7/4.8/4.5),
+the loop returned to Council #5's directive — drive the real consumer — so this
+run expands first-light to the full graded playbook with **Claude Code itself as
+the reasoning host** (not qwen): retrieve → read chunks → decide answer / abstain
+/ refuse, graded against `answers_it.tsv` + `answers_it_multihop.tsv`.
+
+15 questions spanning every dimension, k=3 (k=4 for the cross-doc one):
+
+| # | Type | Top-1 (cos) | Host decision | ✓ |
+|---|---|---|---|---|
+| 1 | fact — ZTL fine | ztl 0.657 | 83 € | ✓ |
+| 2 | fact — recycling % | rifiuti 0.581 | 74 % | ✓ |
+| 3 | fact — single bus ticket | trasporti 0.609 | 1,50 € | ✓ |
+| 4 | fact — total budget | bilancio 0.622 | 14,2 M€ | ✓ |
+| 5 | fact — fast-charger kW | ricarica_ev 0.698 | 50 kW | ✓ |
+| 6 | **cross-doc reasoning** — EV cost to enter ZTL | ztl 0.575 + ev 0.523 | **exempt, no fine** | ✓ |
+| 7 | **nca (F2)** — total ZTL fines 2025 | ztl 0.492 | **abstain** | ✓ |
+| 8 | **nca (F2)** — ozone daily threshold | aria 0.603 | **abstain** (PM2.5 = distractor) | ✓ |
+| 9 | **nca (F2)** — exact bike-lane spend | bilancio 0.553 | **abstain** | ✓ |
+| 10 | ooc — pizza recipe | *(gate dropped)* | refuse | ✓ |
+| 11 | ooc — nginx config | *(gate dropped)* | refuse | ✓ |
+| 12 | precision — **annual** bus pass | trasporti 0.628 | 310 € (not the 35 € monthly) | ✓ |
+| 13 | negation — facial recognition? | videosorv. 0.634 | **no, not used** | ✓ |
+| 14 | **nca (F2)** — lamps failed 2025 | illumin. 0.570 | **abstain** | ✓ |
+| 15 | fact — trees in public green | verde 0.612 | 6.200 | ✓ |
+
+**Score: 15/15.** No failure to file against the tool description or result
+format. What this validates that the qwen harness could not:
+
+1. **The cross-doc reasoning miss (Q1/item D) is a small-model limit, not a
+   system limit — now demonstrated.** The EV-exemption fact is inline in
+   `ztl.md` and was retrieved at top-1; qwen 3b *and* 7b both failed to apply
+   *"esentati … i veicoli completamente elettrici"* and reported the generic
+   83 €. Claude-as-host reads the clause and answers **exempt**. This is the live
+   confirmation of the D/Q1 prediction: the lever was reasoning capability. The
+   capable host needed no decomposition — a single semantic query surfaced the
+   exempting chunk.
+2. **The F2 "retriever-not-judge" contract works *because the host honors it*.**
+   All three `nca` cases returned a plausible in-domain chunk at cos **0.49–0.60**
+   — above the 0.38 gate, exactly the same-domain leak the F2 sweep proved
+   un-gateable with arithmetic. The host read each chunk, found the specific fact
+   absent, and abstained. The contract rewrite (the F2 no-regret deliverable) is
+   doing its job at the seam.
+3. **The 0.38 bge-m3 gate is correctly calibrated in practice.** Far-ooc (pizza,
+   nginx) dropped by the gate; in-domain-but-unanswerable passed it (correctly —
+   they *are* in-domain) and were left to host judgment; every genuine answerable
+   surfaced at top-1. Zero false gates in either direction across 15 queries.
+4. **The result format carries grounding + citation.** `[cos bm25 fusion] <path>`
+   + verbatim chunk was sufficient to attribute every answer to a named source
+   and to make the abstain/answer decision. Nothing more was needed.
+
+**Verdict:** end-to-end, with the real intended host (a capable agent), the
+bge-m3 seam delivers correct, grounded, citable answers *and* correct abstention
+across the full quality gradient — including the one case (cross-doc EV exemption)
+that defeated both local generation models. The standing conclusion holds and is
+now demonstrated rather than inferred: retrieval is at ceiling; correctness lives
+in the host's reasoning + the abstention contract, both of which work. Tier 4.3
+(agent-in-the-loop validation) is **closed**.
