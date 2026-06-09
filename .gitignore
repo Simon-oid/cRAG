@@ -19,6 +19,11 @@ tests/test_store
 tests/test_util
 tests/eval_beir
 tests/eval_ci
+tests/test_injection
+tests/test_crash_safe
+tests/test_determinism
+tests/test_hostile_embed
+tests/test_hostile_query
 
 # Eval: ephemeral per-run results (baseline.csv is the committed reference)
 tests/eval/results.csv
@@ -26,6 +31,7 @@ tests/eval/results.csv
 # Editor / tool state
 .claude/
 .gemini/
+.obsidian/
 graphify-out/
 
 # Personal working notes
