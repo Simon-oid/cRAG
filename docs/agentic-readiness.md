@@ -1,12 +1,21 @@
 # cRAG agentic-readiness plan
 
-How we get cRAG to a quality bar where an LLM agent (butlerbot,
-Claude Code, or anything consuming `crag-mcp`) can rely on its
-retrieval results without a human in the loop. This is not a
-feature roadmap — see [`TODO.md`](../TODO.md) for that. This is
-the *quality* track: the work that turns "the test suite is
-green" into "an agent can trust this corpus search to ground its
-answers for hours of autonomous operation."
+How we get cRAG to a quality bar where an LLM agent (e.g. Claude Code,
+or anything consuming the MCP wrapper) can rely on its retrieval
+results without a human in the loop. This is not a feature roadmap —
+see [`ROADMAP.md`](../ROADMAP.md) for that. This is the *quality* track:
+the work that turns "the test suite is green" into "an agent can trust
+this corpus search to ground its answers for hours of autonomous
+operation."
+
+> **Status.** This document is the original quality plan, written at
+> v0.1.0. Every axis below has since shipped — the test binaries
+> (`test_crash_safe`, `test_fuzz`, `test_hostile_embed`,
+> `test_hostile_query`, `test_determinism`), the `make eval` /
+> `make eval-ci` gates, the soak script (`tests/soak/`), CI, and the
+> agent-in-the-loop run in [`agent-validation.md`](agent-validation.md)
+> all exist now. It is kept as the rationale behind the test suite, not
+> as an open to-do list.
 
 ## What "agent-autonomous" demands
 
@@ -49,7 +58,7 @@ What we already have working in our favour:
   exists.
 - **Documented benchmarks** in [`docs/benchmarks.md`](benchmarks.md)
   on a real corpus (`/usr/share/doc`, 448 files, ~58k chunks).
-- **Reference MCP wrapper** (`crag-mcp` in cMCP) so the surface an
+- **Reference MCP wrapper** (`crag-mcp`) so the surface an
   agent actually sees is exercised.
 
 What we don't have:
@@ -305,13 +314,13 @@ actually drive it on a useful corpus.
 
 1. **Register `crag-mcp` with Claude Code** *(30 minutes)*.
    Indexed corpus: pick something the agent will actually need to
-   know — your codebase, your notes, the cMCP + cRAG docs. Add
+   know — your codebase, your notes, the cRAG docs. Add
    to `~/.claude/mcp_servers.json` (or equivalent). Document the
    exact config in `docs/agent-validation.md`.
 2. **Question playbook** *(1 day to design, ongoing to run)*.
    ~15 questions whose answers are in the indexed corpus and
    whose ground truth you know:
-   - 5 factual ("what protocol version does cMCP pin?")
+   - 5 factual ("what default chunk size does cRAG use?")
    - 5 navigational ("which file implements the FTS5 escaping?")
    - 5 abstractive ("summarise how cRAG handles chunker
      coalescing")
@@ -327,9 +336,9 @@ actually drive it on a useful corpus.
    playbook with Claude using *only* its built-in tools (no
    cRAG). The delta is the value cRAG adds. If it isn't large
    and growing, the retrieval is not pulling its weight.
-5. **butlerbot integration test** *(deferred until butlerbot
-   exists)*. Port the playbook to butlerbot's autonomous loop;
-   that becomes the agent-readiness regression suite.
+5. **Downstream-agent integration test** *(deferred until the
+   consumer exists)*. Port the playbook to the consuming agent's
+   autonomous loop; that becomes the agent-readiness regression suite.
 
 **Acceptance criterion.** Weekly playbook run achieves ≥ 13/15
 correct answers, with citation. Failures are classified as
@@ -367,16 +376,17 @@ Total: ~20 person-days of focused work plus continuous overhead.
 - **Replacing SQLite or FTS5.** Both are mature, audited, well
   understood. Spend the time on cRAG-specific code, not on
   re-fighting battles SQLite already won.
-- **Replacing the chunker.** The markdown coalescing fix in
-  Phase 1.2 (cRAG TODO) is the current production-grade choice.
-  Don't churn unless eval recall says otherwise.
-- **Pure-C HNSW.** Tier 3 "deferred" item — not blocking agent
+- **Replacing the chunker.** The markdown coalescing fix is the
+  current production-grade choice. Don't churn unless eval recall
+  says otherwise.
+- **Pure-C HNSW.** A deferred roadmap item — not blocking agent
   use; at our corpus sizes the linear cosine scan is fast enough.
 - **Performance optimisation past `make eval` baselines.**
   Latency is not the agent-readiness bottleneck — correctness is.
 
 ## Tracking
 
-Each axis above gets one entry in [`TODO.md`](../TODO.md) under a
-new "Tier 4 — agentic readiness" section. As tasks land, the
-acceptance criterion above is the bar for marking them done.
+Each axis above is tracked in the project's internal task list under a
+"Tier 4 — agentic readiness" section; the public summary lives in
+[`ROADMAP.md`](../ROADMAP.md). As tasks land, the acceptance criterion
+above is the bar for marking them done.

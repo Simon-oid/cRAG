@@ -1,10 +1,11 @@
-# Agent-in-the-loop validation (Tier 4.3)
+# Agent-in-the-loop validation
 
-Real-agent validation of cRAG through its MCP wrapper (`crag-mcp`, in the
-cMCP repo), with **Claude Code as the host**. butlerbot is the eventual
-consumer but is unfinished, so per councils #3/#4/#5 the live consumer is
-**cMCP + Claude Code today**. Every failure files against the `crag-mcp`
-tool description or result format — not the model.
+Real-agent validation of cRAG through its MCP wrapper (`crag-mcp`, a thin stdio
+JSON-RPC server over the library), with **Claude Code as the host**. The eventual
+downstream consumer is a separate personal-assistant agent still in development,
+so the live consumer for this validation is the MCP wrapper driven by Claude Code
+as host. Every failure is filed against the `crag-mcp` tool description or result
+format — not the model.
 
 ## Config (the bge-m3 Italian deployment)
 
@@ -12,7 +13,7 @@ tool description or result format — not the model.
 # 1. Embedder: Ollama + bge-m3 (multilingual, 1024-dim). cutoff auto-resolves to 0.38.
 ollama list | grep bge-m3
 
-# 2. Index the GRADABLE real corpus (NOT the templated rag-test.db).
+# 2. Index the GRADABLE real corpus (NOT a templated fixture).
 #    Use a PERSISTENT path, never /tmp — see Finding F1.
 cd ~/cRAG
 CRAG_EMBED_BACKEND=ollama CRAG_EMBED_MODEL=bge-m3 \
@@ -23,7 +24,7 @@ CRAG_EMBED_BACKEND=ollama CRAG_EMBED_MODEL=bge-m3 \
 claude mcp add crag-it \
   --env CRAG_EMBED_BACKEND=ollama \
   --env CRAG_EMBED_MODEL=bge-m3 \
-  -- ~/cMCP/tools/crag-mcp/crag-mcp --db ~/.crag/crag-it.db
+  -- /path/to/crag-mcp --db ~/.crag/crag-it.db
 ```
 
 `claude mcp list` → `crag-it ... ✓ Connected`.
@@ -32,7 +33,7 @@ claude mcp add crag-it \
 > Claude Code reloads. After `mcp add`, **restart the session** (or open a
 > fresh one) for `crag_search` / `crag_stats` to become callable as the agent.
 
-## First-light (2026-06-07) — protocol-level seam proof
+## First-light — protocol-level seam proof
 
 Before the agent drives it, the full wire was exercised directly over stdio
 (handshake → `tools/list` → `tools/call crag_search`):
@@ -50,7 +51,7 @@ The seam answers grounded, citable results under the bge-m3/0.38 config.
 
 ## Findings (filed against crag-mcp tool/result, not the model)
 
-### F1 — server serves an empty index silently, and the refusal string lies (2026-06-07)
+### F1 — server serves an empty index silently, and the refusal string lies
 First real agent-in-the-loop call (`crag_stats`) returned `chunks: 0, files: 0,
 dim: 0` while the CLI on the same path showed 12. Two distinct problems:
 
@@ -61,24 +62,24 @@ dim: 0` while the CLI on the same path showed 12. Two distinct problems:
    (= a session reload). **Fix: serve indexes from a persistent path
    (`~/.crag/…`), and never `rm` a DB a running server has open — reindex in
    place or restart the server.**
-2. **Server (real cRAG/crag-mcp finding):** `crag_search` on an empty index
-   returns `(no chunk cleared the relevance threshold)` — and the tool
-   description explicitly tells the agent that string "means the index has no
-   strong match for this query — **not** that the index is empty." With a
-   0-chunk index that promise is **false**, and the agent has no signal that
-   retrieval is structurally broken vs. merely unmatched. **Proposed fix:**
-   crag-mcp should detect `chunk_count == 0` and return a distinct, honest
-   message (e.g. `(index is empty — 0 chunks)`), or warn loudly at startup.
-   Cheap: it already has the stats. Filed against crag-mcp result format.
+2. **Server finding:** `crag_search` on an empty index returns `(no chunk
+   cleared the relevance threshold)` — and the tool description explicitly tells
+   the agent that string "means the index has no strong match for this query —
+   **not** that the index is empty." With a 0-chunk index that promise is
+   **false**, and the agent has no signal that retrieval is structurally broken
+   vs. merely unmatched. **Proposed fix:** crag-mcp should detect
+   `chunk_count == 0` and return a distinct, honest message (e.g.
+   `(index is empty — 0 chunks)`), or warn loudly at startup. Cheap: it already
+   has the stats. Filed against crag-mcp result format.
 
-   **FIXED 2026-06-07** (cMCP `tools/crag-mcp/main.c`, rebuilt green). The
-   `n == 0` branch now calls `store_stats` and returns a distinct message:
-   empty index → `(index is empty — 0 chunks; check the --db path / ingest,
-   this is NOT a no-match result)`; non-empty but gated → `(no chunk cleared
-   the relevance threshold — the index is non-empty but nothing matched this
-   query)`. Verified both paths over the MCP wire.
+   **FIXED** (crag-mcp `main.c`, rebuilt green). The `n == 0` branch now calls
+   `store_stats` and returns a distinct message: empty index → `(index is empty
+   — 0 chunks; check the --db path / ingest, this is NOT a no-match result)`;
+   non-empty but gated → `(no chunk cleared the relevance threshold — the index
+   is non-empty but nothing matched this query)`. Verified both paths over the
+   MCP wire.
 
-### F2 — retrieval gate doesn't abstain on out-of-corpus, same-domain queries (2026-06-07)
+### F2 — retrieval gate doesn't abstain on out-of-corpus, same-domain queries
 The 0.38 cosine gate is tuned for *recall* (admit genuine bge-m3 matches, which
 sit at 0.43–0.58). But bge-m3 assigns **0.41–0.57 cosine to completely unrelated
 queries** when the whole corpus shares one register (municipal Italian prose).
@@ -110,7 +111,7 @@ model without a refusal prompt.
   *gatekeeper*; the host MUST apply its own grounding/refusal. The tool
   description should say so (it currently implies the gate handles relevance).
 
-## Playbook results (2026-06-07, first real agent-in-the-loop run)
+## Playbook results — first real agent-in-the-loop run
 
 Driven as Claude Code calling `crag_search` (k=3) over the bge-m3 `corpus_it`
 index. Scored on whether the correct source doc is rank 1.
@@ -131,12 +132,12 @@ chunk body, so the agent can attribute answers to a named source verbatim. ✓
 offline harness predicted). The one real seam-level finding is F2: abstention is
 the agent's job, not the gate's.
 
-## F2 resolved — measured, signal killed (2026-06-07, council #6)
+## F2 resolved — measured, signal killed
 
 Swept four cheap abstention signals over the existing 77 labeled rows
-(65 answerable / 6 nca / 6 ooc) via `crag query` hybrid (script: throwaway
-`/tmp/f2_sweep.py`). Looking for a single cut that abstains on the 12 negatives
-without refusing the 65 answerable:
+(65 answerable / 6 nca / 6 ooc) via `crag query` hybrid (throwaway sweep script).
+Looking for a single cut that abstains on the 12 negatives without refusing the
+65 answerable:
 
 | signal | answerable range | negatives range | best cut |
 |---|---|---|---|
@@ -149,7 +150,7 @@ without refusing the 65 answerable:
 criterion). Two reasons, both measured:
 1. `fusion_gap` is constant (~0.001–0.002) regardless of relevance — RRF scores
    are dominated by rank position `1/(60+r)`, not relevance magnitude. (Same
-   failure mode that killed `CRAG_GEN_BAND`.)
+   failure mode that killed the score-band gen cap.)
 2. Same-domain negatives reach cos **0.598** (e.g. nca *"how much was spent on
    bike paths alone"* → budget doc @ 0.544) and overlap the answerable floor
    (0.478). Far-OOC (*"capital of Australia"* 0.286, *"football team"* 0.327)
@@ -159,25 +160,24 @@ criterion). Two reasons, both measured:
    generator/agent can make it (and both qwen + Claude do, correctly).
 
 **Action taken (no-regret):** rewrote the `crag_search` tool description
-(cMCP `tools/crag-mcp/main.c`) to state the contract explicitly — it is a
-*retriever, not a relevance judge*; the host MUST read the chunks and abstain if
-the asked-for fact is absent; the coarse gate only drops far-off-topic matches.
-No abstention signal added to the library (measured useless); no raising of
-0.38 (would re-break recall). F2 is **answered, not postponed.**
+(crag-mcp `main.c`) to state the contract explicitly — it is a *retriever, not a
+relevance judge*; the host MUST read the chunks and abstain if the asked-for fact
+is absent; the coarse gate only drops far-off-topic matches. No abstention signal
+added to the library (measured useless); no raising of 0.38 (would re-break
+recall). F2 is **answered, not postponed.**
 
-## Item D — cross-doc / multi-hop probe (2026-06-07, council #6)
+## Cross-doc / multi-hop probe
 
 Built `tests/manual/answers_it_multihop.tsv`: 8 questions each genuinely
 requiring ≥2 distinct docs (built from the corpus's shared entities: ZTL×EV-
 charging, LED×budget, air-quality×transport, video×wifi, etc.). Measured
-retrieval coverage (script `/tmp/multihop_coverage.py`) AND end-to-end synthesis.
+retrieval coverage AND end-to-end synthesis.
 
-- **Retrieval coverage: 8/8 BOTH docs surfaced at k=3** — but *trivially*, and
-  this is the finding the council's peer review predicted: every question names
-  both topics, so both docs rank independently on their own terms. The 12
-  single-chunk docs **cannot pose a true multi-hop *retrieval* challenge** (fetch
-  doc B *because* doc A is relevant); cRAG does single-shot top-k and has no
-  iterative/graph retrieval. So multi-hop *retrieval* is untestable on this
+- **Retrieval coverage: 8/8 BOTH docs surfaced at k=3** — but *trivially*: every
+  question names both topics, so both docs rank independently on their own terms.
+  The 12 single-chunk docs **cannot pose a true multi-hop *retrieval* challenge**
+  (fetch doc B *because* doc A is relevant); cRAG does single-shot top-k and has
+  no iterative/graph retrieval. So multi-hop *retrieval* is untestable on this
   corpus, not passed.
 - **Synthesis of additive facts works** (qwen2.5:3b): e.g. "−62% + efficienza
   energetica 4 mln" ✓, "rifiuti 167 € + ZTL 83 €" ✓.
@@ -188,8 +188,8 @@ retrieval coverage (script `/tmp/multihop_coverage.py`) AND end-to-end synthesis
   "electric → exempt → 83 doesn't apply." The facts were present; neither model
   *applied* the conditional under the strict RAG prompt.
 
-**Q1 promptability probe (2026-06-07):** tested whether the cross-doc reasoning
-miss is fixable via `RAG_SYSTEM`. Added a rule — "apply the question's qualifiers
+**Q1 promptability probe:** tested whether the cross-doc reasoning miss is fixable
+via `RAG_SYSTEM`. Added a rule — "apply the question's qualifiers
 (vehicle/eligibility) to conditional rules/exemptions; answer for that specific
 case" + an anti-embellishment guard — rebuilt, and re-ran the full graded harness
 (`answers.sh`, temp 0). Result: **scorecard IDENTICAL to baseline** (correct
@@ -201,28 +201,29 @@ false-refusal) but still not *correct*, and it drops the answerable charging fac
 too. **Reverted** (no graded-metric movement → not worth the prompt complexity;
 measure-before-keep). Conclusion: the cross-doc reasoning miss is a genuine
 small-model limit, not a prompt defect; the lever is a bigger model or
-**agent-side decomposition** (Claude-as-host can issue the sub-questions as
-separate `crag_search` calls) — not library prompt-tuning.
+**agent-side decomposition** (the host can issue the sub-questions as separate
+`crag_search` calls) — not library prompt-tuning.
 
-**D verdict:** consistent with the program's standing conclusion — retrieval is
+**Verdict:** consistent with the program's standing conclusion — retrieval is
 not the bottleneck; **generation/reasoning is.** This corpus can probe cross-doc
 *reasoning* (and just exposed a real, size-robust miss) but cannot probe
 multi-hop *retrieval*. A genuine multi-hop *retrieval* benchmark would need facts
 deliberately **split across linked docs** so doc B is only findable via doc A —
 the next substrate to build if/when multi-hop retrieval becomes a real need
-(it isn't yet: the live host is Claude, which can issue its own follow-up
-`crag_search` calls — agent-driven iterative retrieval beats a graph index for
-this consumer).
+(it isn't yet: the live host is a capable agent, which can issue its own
+follow-up `crag_search` calls — agent-driven iterative retrieval beats a graph
+index for this consumer).
 
-## Full 15-Q playbook — Claude-as-host, end-to-end (2026-06-08)
+## Full 15-Q playbook — Claude-as-host, end-to-end
 
-The 4.3 first-light run (above) scored *retrieval rank* with Claude calling
+The first-light run (above) scored *retrieval rank* with Claude calling
 `crag_search` but did not exercise Claude's own **abstention and reasoning** as
-the host generator. After the Tier-4 hardening backlog closed (4.4/4.7/4.8/4.5),
-the loop returned to Council #5's directive — drive the real consumer — so this
-run expands first-light to the full graded playbook with **Claude Code itself as
-the reasoning host** (not qwen): retrieve → read chunks → decide answer / abstain
-/ refuse, graded against `answers_it.tsv` + `answers_it_multihop.tsv`.
+the host generator. After the hardening backlog closed (crash-safety, hostile
+suites, soak, CI), the loop returned to the standing directive — drive the real
+consumer — so this run expands first-light to the full graded playbook with
+**Claude Code itself as the reasoning host** (not qwen): retrieve → read chunks →
+decide answer / abstain / refuse, graded against `answers_it.tsv` +
+`answers_it_multihop.tsv`.
 
 15 questions spanning every dimension, k=3 (k=4 for the cross-doc one):
 
@@ -247,12 +248,12 @@ the reasoning host** (not qwen): retrieve → read chunks → decide answer / ab
 **Score: 15/15.** No failure to file against the tool description or result
 format. What this validates that the qwen harness could not:
 
-1. **The cross-doc reasoning miss (Q1/item D) is a small-model limit, not a
-   system limit — now demonstrated.** The EV-exemption fact is inline in
-   `ztl.md` and was retrieved at top-1; qwen 3b *and* 7b both failed to apply
+1. **The cross-doc reasoning miss (Q1) is a small-model limit, not a system
+   limit — now demonstrated.** The EV-exemption fact is inline in `ztl.md` and
+   was retrieved at top-1; qwen 3b *and* 7b both failed to apply
    *"esentati … i veicoli completamente elettrici"* and reported the generic
    83 €. Claude-as-host reads the clause and answers **exempt**. This is the live
-   confirmation of the D/Q1 prediction: the lever was reasoning capability. The
+   confirmation of the earlier prediction: the lever was reasoning capability. The
    capable host needed no decomposition — a single semantic query surfaced the
    exempting chunk.
 2. **The F2 "retriever-not-judge" contract works *because the host honors it*.**
@@ -274,5 +275,5 @@ bge-m3 seam delivers correct, grounded, citable answers *and* correct abstention
 across the full quality gradient — including the one case (cross-doc EV exemption)
 that defeated both local generation models. The standing conclusion holds and is
 now demonstrated rather than inferred: retrieval is at ceiling; correctness lives
-in the host's reasoning + the abstention contract, both of which work. Tier 4.3
-(agent-in-the-loop validation) is **closed**.
+in the host's reasoning + the abstention contract, both of which work.
+Agent-in-the-loop validation is **closed**.
