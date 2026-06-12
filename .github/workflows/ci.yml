@@ -37,3 +37,20 @@ jobs:
 
       - name: make check (tests + valgrind + ASan/UBSan + TSan + eval-ci)
         run: make check
+
+  # Portability check: the README claims Linux/macOS support, so prove the
+  # macOS half. Plain `make test` only — valgrind isn't available on macOS
+  # runners and the sanitizer layers are already exercised on Linux.
+  test-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The runner's system curl ships no libcurl.pc; brew's does.
+      - name: Install dependencies
+        run: brew install pkg-config curl
+
+      - name: make test
+        run: |
+          export PKG_CONFIG_PATH="$(brew --prefix curl)/lib/pkgconfig"
+          make test

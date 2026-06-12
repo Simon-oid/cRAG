@@ -4,13 +4,7 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-### Added
-- Public-facing documentation: a polished `README.md`, `ARCHITECTURE.md`
-  (design deep-dive + full CLI reference), `ROADMAP.md`, and a `docs/` index.
-
-## [0.1.0]
+## [0.1.0] — 2026-06-12
 
 First feature-complete release: a from-scratch RAG pipeline in pure C11.
 
@@ -61,7 +55,17 @@ First feature-complete release: a from-scratch RAG pipeline in pure C11.
   server-free nDCG/Recall/MRR floors.
 - BEIR evaluation harness (`make eval`, SciFact / NFCorpus) with Python
   reference implementations.
-- GitHub Actions CI running the full `make check` gate on every push/PR.
+- GitHub Actions CI running the full `make check` gate on every push/PR, plus
+  a macOS `make test` job backing the Linux/macOS portability claim.
+
+**Documentation**
+- Public-facing documentation: a polished `README.md` (with a terminal demo
+  GIF), `ARCHITECTURE.md` (design deep-dive + full CLI reference),
+  `ROADMAP.md`, a `docs/` index, and issue/PR templates.
+- MCP integration documented: the [`crag-mcp`](https://github.com/Simon-oid/cMCP/tree/main/tools/crag-mcp)
+  reference server (in the sibling cMCP project) exposes the index as
+  `crag_search` / `crag_stats` tools; agent-in-the-loop behaviour validated in
+  `docs/agent-validation.md`.
 
 ### Measured
 - BEIR SciFact: exact cosine scores nDCG@10 **0.7407** with `mxbai-embed-large`,
@@ -72,5 +76,4 @@ First feature-complete release: a from-scratch RAG pipeline in pure C11.
 - Embedder language probe: `mxbai-embed-large` 8/20 vs `bge-m3` 20/20 on Italian
   paraphrase queries → `bge-m3` documented as the non-English default.
 
-[Unreleased]: https://github.com/Simon-oid/cRAG/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/Simon-oid/cRAG/releases/tag/v0.1.0
