@@ -19,6 +19,8 @@ dependencies are `libcurl`, `libm`, `libpthread`, `libdl`.
 ~3 300 lines of C  ·  one binary (crag) + a test suite  ·  single Makefile
 ```
 
+![cRAG demo: index, incremental rerun, hybrid query with term highlighting, local generation](docs/demo.gif)
+
 ---
 
 ## Table of contents
@@ -34,6 +36,7 @@ dependencies are `libcurl`, `libm`, `libpthread`, `libdl`.
 - [Indexing](#indexing)
 - [Configuration](#configuration)
 - [Benchmarks](#benchmarks)
+- [MCP / agent integration](#mcp--agent-integration)
 - [Project layout](#project-layout)
 - [Documentation](#documentation)
 - [Status &amp; roadmap](#status--roadmap)
@@ -48,7 +51,8 @@ is an attempt to do the whole thing closer to the metal: paragraph- and
 header-aware chunking, a hand-parsed JSON layer, FTS5 for lexical retrieval,
 a pthread pool around the embedder, and an incremental indexer that survives
 interrupts. Built as a portfolio piece, hardened with sanitizer/fuzzer gates,
-and designed to be driven by an LLM agent through an MCP wrapper.
+and designed to be driven by an LLM agent through an
+[MCP wrapper](#mcp--agent-integration) — which exists and is validated.
 
 It deliberately targets the **personal / single-tenant** operating envelope
 (thousands to a few hundred thousand chunks): exact brute-force cosine, a
@@ -269,6 +273,32 @@ honest gap between an embedded FTS5 and a tuned IR toolkit). Full breakdown, the
 cross-embedder sweep, NFCorpus, and the per-query spot-check are in
 [`docs/benchmarks.md`](docs/benchmarks.md) and the
 [performance report](docs/crag-performance-report.pdf).
+
+## MCP / agent integration
+
+cRAG is built to be driven by an LLM agent, and the wrapper already exists:
+[`crag-mcp`](https://github.com/Simon-oid/cMCP/tree/main/tools/crag-mcp), a
+reference MCP server in the sibling [cMCP](https://github.com/Simon-oid/cMCP)
+project (a from-scratch C11 implementation of the
+[Model Context Protocol](https://modelcontextprotocol.io/)). It links cRAG
+statically and exposes the index as two MCP tools:
+
+| Tool | Purpose |
+|---|---|
+| `crag_search` | Hybrid retrieval (cosine + BM25, RRF-fused) over the index |
+| `crag_stats`  | Diagnostics: DB path, chunk count, file count, dimension |
+
+```bash
+make                                          # build cRAG objects first
+git clone https://github.com/Simon-oid/cMCP ../cMCP
+make -C ../cMCP crag-mcp CRAG_DIR=$(pwd)      # builds tools/crag-mcp/crag-mcp
+```
+
+Point any MCP host (e.g. Claude Code) at the resulting stdio binary and the
+agent can search your corpus directly. The agent-side behaviour — the
+abstention contract, cross-document reasoning, prompt-injection handling — is
+validated end-to-end with Claude as the reasoning host in
+[`docs/agent-validation.md`](docs/agent-validation.md) (15/15 graded answers).
 
 ## Project layout
 
