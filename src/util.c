@@ -91,9 +91,11 @@ int json_extract_floats(const char *json, const char *key,
     while (*p && *p != ']' && n < max_n) {
         while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r' || *p == ',') p++;
         if (*p == ']' || *p == '\0') break;
+        if (*p == '[') { p++; continue; }
         char *end;
-        out[n++] = strtof(p, &end);
+        float val = strtof(p, &end);
         if (end == p) break;
+        out[n++] = val;
         p = end;
     }
     *out_n = n;
