@@ -4,6 +4,37 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Library API** `include/crag_lib.h` (`src/lib.c`): open / add / begin /
+  commit / search (cosine, bm25, hybrid) / hits_free / stats / close over the
+  index, with documented ownership and one index-wide vector dim.
+  `crag_errstr` moved from `main.c` to `src/errstr.c` so the library stands
+  alone. Tested by `tests/test_lib.c`.
+- **Python binding** `crag-index` (`python/`, `pyproject.toml`, `setup.py`):
+  cffi API mode, a self-contained wheel (index + vendored SQLite, no curl),
+  zero-copy float32 vectors via `ffi.from_buffer`, type errors instead of
+  silent conversion. CI job `python-wheel` builds it on Linux and macOS and
+  tests it in a clean virtualenv, with and without NumPy.
+- **Evaluation with uncertainty**: `eval_beir --per-query` writes per-query
+  scores; `tests/eval/significance.py` reports 95% bootstrap intervals and a
+  paired permutation test; the report is versioned in
+  `docs/eval-significance.md` and the per-query CSVs in `tests/eval/`.
+- **Italian benchmark** `DATASET=squadit`: 2,010 SQuAD-it paragraphs and 500
+  seeded questions in BEIR layout (`tests/eval/fetch_squadit.py`). It
+  replaces the planned hand-labelled qrels on the Smart City fixture, which
+  is 20 templates duplicated ~5× and has no relevance gradient.
+
+### Changed
+
+- README states exactly what the BM25 is (SQLite FTS5 `bm25()`, k1 1.2, b
+  0.75, `unicode61`, no stemming) and reports the measured answer to "when
+  does hybrid beat cosine": with a suitable embedder it does not
+  (differences not significant on SciFact, NFCorpus, SQuAD-it); with an
+  unsuitable one it recovers +0.18 nDCG@10.
+
 ## [0.1.0] — 2026-06-12
 
 First feature-complete release: a from-scratch RAG pipeline in pure C11.

@@ -23,6 +23,8 @@ DB="${CRAG_EVAL_DB:-/tmp/crag_${DATASET}.db}"
 DOCS="${CRAG_EVAL_DOCS:-/tmp/crag_${DATASET}_docs}"
 WORKERS="${CRAG_EVAL_WORKERS:-4}"
 CSV="$ROOT/tests/eval/results.csv"
+# Per-query scores, kept per dataset + model for the significance report.
+PERQ="${CRAG_EVAL_PERQ:-$ROOT/tests/eval/perquery_${DATASET}_${CRAG_EMBED_MODEL:-mxbai-embed-large}.csv}"
 
 export CRAG_EMBED_BACKEND="${CRAG_EMBED_BACKEND:-ollama}"
 export CRAG_EMBED_MODEL="${CRAG_EMBED_MODEL:-mxbai-embed-large}"
@@ -49,7 +51,7 @@ echo "indexing $DATASET with $CRAG_EMBED_BACKEND/$CRAG_EMBED_MODEL ($WORKERS wor
 time ./crag index "$DOCS" --db "$DB" --ext txt --workers "$WORKERS"
 
 rm -f "$CSV"
-EVAL_ARGS=("$DB" "$DATA/queries.jsonl" "$DATA/qrels/test.tsv" --dataset "$DATASET" --csv "$CSV")
+EVAL_ARGS=("$DB" "$DATA/queries.jsonl" "$DATA/qrels/test.tsv" --dataset "$DATASET" --csv "$CSV" --per-query "$PERQ")
 if [ "${CRAG_EVAL_RERANK:-0}" = "1" ]; then
     EVAL_ARGS+=(--rerank --rerank-pool "${CRAG_EVAL_RERANK_POOL:-100}")
     [ -n "${CRAG_RERANK_URL:-}" ] && EVAL_ARGS+=(--rerank-url "$CRAG_RERANK_URL")

@@ -195,6 +195,18 @@ Three search modes, selected with `--search`:
   byte-identical; the quality baseline.
 - **`bm25`** — FTS5 BM25 over `chunks.text` via an external-content virtual
   table. Skips the embedder entirely (≈7× faster).
+
+  **What this BM25 is, exactly.** It is SQLite FTS5's built-in `bm25()`
+  ranking function, not an implementation of cRAG's own: default parameters
+  (k1 = 1.2, b = 0.75), FTS5's default `unicode61` tokenizer (Unicode-aware
+  case folding and diacritic removal, **no stemming and no stop-word list**,
+  in any language), one indexed column per chunk. That choice buys a mature,
+  crash-safe inverted index inside the same SQLite file as the vectors, at
+  the cost of tuning: a dedicated IR toolkit with stemming does a little
+  better, e.g. on BEIR SciFact FTS5 scores nDCG@10 0.6540 against Anserini's
+  published 0.665. No stemming also means Italian inflections ("tumore" /
+  "tumori") do not match each other lexically; the dense side of `hybrid`
+  covers that.
 - **`hybrid`** (default) — Reciprocal Rank Fusion (k=60) over the cosine and
   BM25 result pools. Robust to embedder weakness on rare-keyword queries.
 
@@ -273,6 +285,63 @@ honest gap between an embedded FTS5 and a tuned IR toolkit). Full breakdown, the
 cross-embedder sweep, NFCorpus, and the per-query spot-check are in
 [`docs/benchmarks.md`](docs/benchmarks.md) and the
 [performance report](docs/crag-performance-report.pdf).
+
+### When does hybrid beat vector-only search? (measured 2026-11-09)
+
+nDCG@10 with a 95% bootstrap interval, and the paired difference hybrid −
+cosine with a paired permutation test (10,000 rounds each, fixed seed).
+Ollama 0.40.4 embedders on a Ryzen 7 5800X; every number below is printed by
+`tests/eval/run.sh` + `tests/eval/significance.py` from the per-query CSVs in
+`tests/eval/` ([full report](docs/eval-significance.md)).
+
+| Dataset (queries) | Embedder | cosine | bm25 | hybrid | hybrid − cosine | p |
+|---|---|---|---|---|---|---|
+| SciFact, en (300) | mxbai-embed-large | 0.742 [0.699, 0.782] | 0.654 [0.609, 0.699] | 0.733 [0.691, 0.774] | −0.009 [−0.036, +0.018] | 0.52 |
+| NFCorpus, en (323) | mxbai-embed-large | 0.375 [0.339, 0.411] | 0.300 [0.266, 0.334] | 0.368 [0.334, 0.405] | −0.006 [−0.022, +0.009] | 0.44 |
+| SQuAD-it, it (500) | bge-m3 | 0.845 [0.820, 0.869] | 0.804 [0.774, 0.833] | 0.856 [0.832, 0.879] | +0.011 [−0.012, +0.033] | 0.32 |
+| SQuAD-it, it (500) | mxbai-embed-large | 0.556 [0.520, 0.592] | 0.803 [0.773, 0.832] | 0.737 [0.706, 0.767] | **+0.181** [+0.156, +0.207] | <0.001 |
+
+The answer the data gives:
+
+- **With an embedder suited to the language, hybrid and cosine are
+  indistinguishable** — on all three datasets the interval of the difference
+  straddles zero. Hybrid always beats BM25 alone (p < 0.001).
+- **With the wrong embedder, hybrid is the safety net.** An English model on
+  Italian text collapses cosine to 0.556; hybrid recovers +0.18 — but here BM25
+  alone (0.803) is better still. Hybrid is insurance against a weak embedder,
+  not a free gain over a good one.
+- Caveats: binary relevance; SQuAD-it has one relevant paragraph per
+  question and is a machine-assisted translation (see
+  `tests/eval/fetch_squadit.py`), so its absolute numbers are not comparable
+  with the English sets — the comparisons within a row are the signal.
+
+## Use it as a library
+
+The index underneath the `crag` program is a stable C API,
+[`include/crag_lib.h`](include/crag_lib.h): open an index, add chunks with
+your own vectors, search in any of the three modes, free the hits. Every
+function documents who owns each pointer; return codes are `crag_err_t`.
+
+The same API is packaged for Python with **cffi** (API mode, so the compiler
+checks the binding against the header). The wheel compiles cRAG's index and
+the vendored SQLite into the package, so `pip install` needs nothing from the
+system but a C compiler, and NumPy `float32` vectors reach C without a copy:
+
+```bash
+pip install .            # from a checkout; builds the wheel
+```
+
+```python
+import numpy as np, crag
+
+with crag.Index("notes.db") as idx:
+    idx.add_many((src, text, vec) for src, text, vec in chunks)   # vec: float32
+    hits = idx.search(vector=q, text="query words", k=5)          # hybrid
+    print(hits[0].source, hits[0].score, hits[0].cosine)
+```
+
+CI builds the wheel on Linux and macOS (Python 3.9 and 3.13), installs it into
+a fresh virtualenv and runs `python/tests/` without and with NumPy.
 
 ## MCP / agent integration
 

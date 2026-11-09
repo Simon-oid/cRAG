@@ -17,6 +17,11 @@ DATA="$HERE/data"
 URL="https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/${DATASET}.zip"
 DEST="$DATA/$DATASET"
 
+# squadit is built from SQuAD-it (Italian), not downloaded as a BEIR zip.
+if [ "$DATASET" = "squadit" ]; then
+    exec python3 -I "$HERE/fetch_squadit.py"
+fi
+
 if [ -f "$DEST/corpus.jsonl" ] && \
    [ -f "$DEST/queries.jsonl" ] && \
    [ -f "$DEST/qrels/test.tsv" ]; then

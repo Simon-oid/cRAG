@@ -339,6 +339,22 @@ static int collapse_docs_ordered(crag_chunk_t *res, const int *order, int nres,
 enum { M_COSINE, M_BM25, M_HYBRID, M_RERANK, M_COUNT };
 static const char *mode_name[M_COUNT] = { "cosine", "bm25", "hybrid", "rerank" };
 
+/* --per-query PATH: one CSV row per (query, mode) with that query's own
+   nDCG@10 / MRR@10 / R@10. Means alone cannot say whether two modes
+   really differ; tests/eval/significance.py resamples these rows for
+   bootstrap confidence intervals and a paired permutation test. */
+static FILE *g_perq;
+
+static void score_rec(const qjudge_t *q, char docs[][DOCID_MAX], int nd,
+                      acc_t *acc, int m) {
+    acc_t before = acc[m];
+    score_query(q, docs, nd, &acc[m]);
+    if (g_perq)
+        fprintf(g_perq, "%s,%s,%.6f,%.6f,%.6f\n", q->qid, mode_name[m],
+                acc[m].ndcg - before.ndcg, acc[m].mrr - before.mrr,
+                acc[m].recall[0] - before.recall[0]);
+}
+
 static int run_eval(const char *db_path, const char *queries_path,
                     const char *qrels_path, int k_chunks, const char *csv_path,
                     const char *rr_name, const char *rr_url, int rr_pool,
@@ -407,7 +423,7 @@ static int run_eval(const char *db_path, const char *queries_path,
                                         k_chunks, res, hscores);
             if (n < 0) n = 0;
             int nd = collapse_docs(res, n, docs, MAX_DOCS);
-            score_query(q, docs, nd, &acc[m]);
+            score_rec(q, docs, nd, acc, m);
             for (int i = 0; i < n; i++) { free(res[i].source); free(res[i].text); }
         }
 
@@ -437,7 +453,7 @@ static int run_eval(const char *db_path, const char *queries_path,
                     rr_failed++;
                 }
                 int nd = collapse_docs_ordered(res, order, n, docs, MAX_DOCS);
-                score_query(q, docs, nd, &acc[M_RERANK]);
+                score_rec(q, docs, nd, acc, M_RERANK);
             }
             for (int i = 0; i < n; i++) { free(res[i].source); free(res[i].text); }
         }
@@ -536,7 +552,7 @@ int main(int argc, char **argv) {
         int k = CHUNK_K;
         const char *csv = NULL;
         const char *dataset = "scifact";   /* drives header + reference block */
-        const char *rr_name = NULL, *rr_url = NULL;
+        const char *rr_name = NULL, *rr_url = NULL, *perq = NULL;
         int rr_pool = 100;            /* deep pool the cross-encoder reorders */
         for (int i = 5; i < argc; i++) {
             if (strcmp(argv[i], "-k") == 0 && i + 1 < argc) k = atoi(argv[++i]);
@@ -551,13 +567,22 @@ int main(int argc, char **argv) {
                 rr_url = argv[++i];
             else if (strcmp(argv[i], "--rerank-pool") == 0 && i + 1 < argc)
                 rr_pool = atoi(argv[++i]);
+            else if (strcmp(argv[i], "--per-query") == 0 && i + 1 < argc)
+                perq = argv[++i];
         }
         if (k <= 0) k = CHUNK_K;
         if (rr_pool <= 0) rr_pool = 100;
         /* --rerank-url alone implies the default llama.cpp rerank backend. */
         if (rr_url && !rr_name) rr_name = "llamacpp";
-        return run_eval(db, queries, qrels, k, csv, rr_name, rr_url, rr_pool,
-                        dataset);
+        if (perq) {
+            g_perq = fopen(perq, "w");
+            if (!g_perq) { perror(perq); return 1; }
+            fprintf(g_perq, "qid,mode,ndcg10,mrr10,recall10\n");
+        }
+        int rc = run_eval(db, queries, qrels, k, csv, rr_name, rr_url, rr_pool,
+                          dataset);
+        if (g_perq) fclose(g_perq);
+        return rc;
     }
 
     fprintf(stderr,
@@ -565,7 +590,7 @@ int main(int argc, char **argv) {
         "  %s materialize <corpus.jsonl> <outdir>\n"
         "  %s eval <db> <queries.jsonl> <qrels.tsv> [-k N] [--csv path]\n"
         "          [--dataset NAME] [--rerank] [--rerank-backend NAME]\n"
-        "          [--rerank-url URL] [--rerank-pool N]\n",
+        "          [--rerank-url URL] [--rerank-pool N] [--per-query path]\n",
         argv[0], argv[0]);
     return 2;
 }

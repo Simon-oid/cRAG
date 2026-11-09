@@ -1,5 +1,36 @@
 # cRAG Benchmarks
 
+## Retrieval quality with uncertainty (2026-11-09)
+
+Means alone cannot tell whether hybrid beats cosine. Since 2026-11-09 every
+BEIR-style run also writes per-query scores (`eval_beir --per-query`, done by
+`tests/eval/run.sh`), and `tests/eval/significance.py` turns them into 95%
+bootstrap intervals and a paired permutation test of hybrid − cosine and
+hybrid − bm25. The versioned output is
+[`eval-significance.md`](eval-significance.md); the per-query CSVs are in
+`tests/eval/` so the analysis can be rerun without re-embedding:
+
+```bash
+DATASET=scifact  bash tests/eval/run.sh       # also nfcorpus, squadit
+CRAG_EMBED_MODEL=bge-m3 DATASET=squadit bash tests/eval/run.sh
+python3 tests/eval/significance.py tests/eval/perquery_*.csv --md docs/eval-significance.md
+```
+
+Environment: Ollama 0.40.4, `mxbai-embed-large` and `bge-m3`, Ryzen 7 5800X,
+16 GB RAM. Summary (nDCG@10, difference hybrid − cosine): SciFact −0.009
+(p 0.52), NFCorpus −0.006 (p 0.44), SQuAD-it with bge-m3 +0.011 (p 0.32) — not
+significant; SQuAD-it with the English mxbai +0.181 (p < 0.001), where BM25
+alone is better still. The 2026-06 single-number results below are kept as
+history; the SciFact cosine number reproduced within 0.0014 (0.7421 vs
+0.7407) and NFCorpus exactly.
+
+**SQuAD-it** (`DATASET=squadit`) is the Italian set: the 2,010 test-split
+paragraphs of SQuAD-it as the corpus, 500 seeded questions, each relevant to
+the paragraph it was written for. It replaces hand-labelled qrels on the
+Smart City fixture, which is 20 templates duplicated ~5× and therefore has
+no relevance gradient to measure.
+
+
 Human-verifiable measurements on the author's machine. Numbers are
 load-bearing only in the sense of "this is what we saw when the
 harness was run"; reproduce locally before quoting.
