@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=64", "cffi>=1.15"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "crag-index"
+version = "1.0.0"
+description = "cRAG's hybrid retrieval index (exact cosine + SQLite FTS5 BM25, RRF fusion) as a Python library, in C with no runtime dependencies"
+readme = "python/README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+dependencies = ["cffi>=1.15"]
+optional-dependencies = { numpy = ["numpy>=1.21"] }
+classifiers = [
+    "Programming Language :: C",
+    "Programming Language :: Python :: 3",
+    "Topic :: Text Processing :: Indexing",
+]
+
+[tool.setuptools]
+package-dir = { "" = "python" }
+packages = ["crag"]

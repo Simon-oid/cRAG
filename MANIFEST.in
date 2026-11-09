@@ -1,0 +1,5 @@
+include include/*.h
+include src/lib.c src/store.c src/search.c src/errstr.c
+include third_party/sqlite3.c third_party/sqlite3.h
+include python/README.md setup.py
+recursive-include python/crag *.py

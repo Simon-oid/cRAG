@@ -1,6 +1,6 @@
 *.o
 *.a
-crag
+/crag
 build/
 data/
 .cache/
@@ -17,6 +17,7 @@ tests/test_retrieval
 tests/test_search
 tests/test_store
 tests/test_util
+tests/test_lib
 tests/eval_beir
 tests/eval_ci
 tests/test_injection
@@ -40,3 +41,13 @@ TODO.md
 CLAUDE.md
 STUDIO_RAG.md
 STUDIO_RAG.pdf
+GEMINI.md
+# Personal ingestion helpers (hard-coded home paths, not part of the tool)
+scripts/
+
+# Python packaging artifacts
+python/*.egg-info/
+dist/
+python/crag/_native*.so
+python/crag/__pycache__/
+python/tests/__pycache__/
