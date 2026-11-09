@@ -1,5 +1,26 @@
 # cRAG Benchmarks
 
+## Index search speed vs NumPy and FAISS (2026-11-09)
+
+`bench/vs_numpy_faiss.py` (via the Python binding, each engine in its own
+process, Ryzen 7 5800X, 16 GB): exact top-10 cosine over random unit vectors,
+dim 1024, 200 queries one at a time. Full table:
+[`bench-vs-numpy-faiss.md`](bench-vs-numpy-faiss.md).
+
+| N | cRAG P50 / P95 ms | NumPy P50 / P95 ms | FAISS IndexFlatIP (1 thread) P50 / P95 ms | Peak RSS cRAG / NumPy / FAISS MB |
+|---|---|---|---|---|
+| 10,000 | 10.5 / 10.8 | 0.5 / 1.6 | 1.1 / 1.1 | 129 / 118 / 133 |
+| 100,000 | 112.0 / 112.8 | 15.4 / 16.3 | 10.5 / 11.4 | 909 / 822 / 836 |
+
+All three return the same top-10 for every query (exact search). cRAG is about
+10× slower than FAISS and 7× slower than NumPy, linear in N, with similar
+memory. The cause is structural: each query re-reads every vector as a SQLite
+BLOB and scores it with a plain scalar loop, while NumPy (BLAS) and FAISS scan
+one contiguous in-memory matrix with SIMD. The fix, if speed matters more
+than the single-file simplicity, is a contiguous in-memory vector cache plus a
+SIMD dot product; until then cRAG's exact scan is comfortable at ≤ 100k chunks
+(~0.1 s) and not the right tool beyond.
+
 ## Retrieval quality with uncertainty (2026-11-09)
 
 Means alone cannot tell whether hybrid beats cosine. Since 2026-11-09 every

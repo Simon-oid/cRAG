@@ -286,6 +286,12 @@ cross-embedder sweep, NFCorpus, and the per-query spot-check are in
 [`docs/benchmarks.md`](docs/benchmarks.md) and the
 [performance report](docs/crag-performance-report.pdf).
 
+**Search speed, honestly:** cRAG's exact cosine over 100,000 chunks takes
+112 ms P50 against 10.5 ms for FAISS `IndexFlatIP` and 15.4 ms for NumPy on
+the same vectors (same top-10 for every query) — it scans SQLite BLOBs
+without SIMD. Fine up to ~100k chunks; see
+[`docs/benchmarks.md`](docs/benchmarks.md#index-search-speed-vs-numpy-and-faiss-2026-11-09).
+
 ### When does hybrid beat vector-only search? (measured 2026-11-09)
 
 nDCG@10 with a 95% bootstrap interval, and the paired difference hybrid −

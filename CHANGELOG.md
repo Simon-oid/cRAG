@@ -27,6 +27,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   replaces the planned hand-labelled qrels on the Smart City fixture, which
   is 20 templates duplicated ~5× and has no relevance gradient.
 
+- **Speed benchmark** `bench/vs_numpy_faiss.py`: exact top-10 cosine vs NumPy
+  and FAISS IndexFlatIP at 10k and 100k chunks, per-engine process, P50/P95,
+  build time, peak RSS and a same-results check (`docs/bench-vs-numpy-faiss.md`).
+
 ### Changed
 
 - README states exactly what the BM25 is (SQLite FTS5 `bm25()`, k1 1.2, b
