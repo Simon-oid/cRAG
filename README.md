@@ -36,10 +36,12 @@ dependencies are `libcurl`, `libm`, `libpthread`, `libdl`.
 - [Indexing](#indexing)
 - [Configuration](#configuration)
 - [Benchmarks](#benchmarks)
+- [Use it as a library](#use-it-as-a-library)
 - [MCP / agent integration](#mcp--agent-integration)
 - [Project layout](#project-layout)
 - [Documentation](#documentation)
 - [Status &amp; roadmap](#status--roadmap)
+- [Limitations](#limitations)
 - [License](#license)
 
 ---
