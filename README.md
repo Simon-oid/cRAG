@@ -398,7 +398,8 @@ docs/         benchmarks, agentic-readiness, agent validation, performance repor
 
 ## Status &amp; roadmap
 
-cRAG is **feature-complete for v0.1.0** and gated by `make check` (tests +
+cRAG is at **v0.2.0**: the engine, a stable C library API, the
+`crag-index` Python binding and an evaluation with uncertainty. It is gated by `make check` (tests +
 valgrind + ASan/UBSan + TSan + offline eval). Retrieval is at the architecture
 ceiling for the personal/single-tenant target; the live levers are
 generation/reasoning and the agent-side abstention contract, not new retrieval

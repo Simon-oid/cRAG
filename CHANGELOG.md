@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-11-11
+
 ### Added
 
 - **Library API** `include/crag_lib.h` (`src/lib.c`): open / add / begin /
@@ -111,4 +113,6 @@ First feature-complete release: a from-scratch RAG pipeline in pure C11.
 - Embedder language probe: `mxbai-embed-large` 8/20 vs `bge-m3` 20/20 on Italian
   paraphrase queries → `bge-m3` documented as the non-English default.
 
+[Unreleased]: https://github.com/Simon-oid/cRAG/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Simon-oid/cRAG/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Simon-oid/cRAG/releases/tag/v0.1.0

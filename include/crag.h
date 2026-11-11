@@ -1,7 +1,7 @@
 #ifndef CRAG_H
 #define CRAG_H
 
-#define CRAG_VERSION "0.1.0"
+#define CRAG_VERSION "0.2.0"
 
 #define CRAG_EMBED_DIM_MAX 4096
 
