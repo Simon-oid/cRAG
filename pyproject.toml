@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "crag-index"
-version = "1.0.0"
+version = "0.2.0"
 description = "cRAG's hybrid retrieval index (exact cosine + SQLite FTS5 BM25, RRF fusion) as a Python library, in C with no runtime dependencies"
 readme = "python/README.md"
 license = { text = "MIT" }

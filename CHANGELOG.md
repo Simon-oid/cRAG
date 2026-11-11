@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- The Python binding `crag-index` is versioned with cRAG: 0.2.0, not 1.0.0.
+  1.0.0 promised an API stability the project does not yet claim. The
+  package was never published to PyPI, so nothing depends on the old
+  number.
+
 ### Fixed
 
 - The Makefile now tracks header dependencies (`-MMD -MP`): a change to

@@ -26,7 +26,7 @@ from typing import Any
 from ._native import ffi, lib
 
 __all__ = ["Index", "Hit", "CragError", "COSINE", "BM25", "HYBRID"]
-__version__ = "1.0.0"
+__version__ = "0.2.0"
 
 COSINE = "cosine"
 BM25 = "bm25"
