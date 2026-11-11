@@ -406,6 +406,13 @@ generation/reasoning and the agent-side abstention contract, not new retrieval
 machinery. Deferred work (HNSW, PDF/HTML, Windows port, configurable FTS
 tokenizer) is gated on a real need — see [`ROADMAP.md`](ROADMAP.md).
 
+## Limitations
+
+[`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md) lists where cRAG stops, with the
+numbers: an exact scan that is 7–10× slower than NumPy or FAISS at 100k
+chunks, hybrid that does not beat cosine with a good embedder, an untuned
+FTS5 BM25, text and Markdown only, Linux and macOS only.
+
 ## License
 
 [MIT](LICENSE). © Simon-oid.
