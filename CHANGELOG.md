@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- The Makefile now tracks header dependencies (`-MMD -MP`): a change to
+  `include/*.h` rebuilds the objects that include it. Before, `make` after
+  bumping `CRAG_VERSION` left a stale `main.o` and `crag --version` still
+  printed the old version.
+
 ## [0.2.0] — 2026-11-11
 
 ### Added

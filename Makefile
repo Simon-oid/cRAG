@@ -25,8 +25,13 @@ all: $(BIN)
 $(BIN): $(OBJ) $(SQLITE_OBJ)
 	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
+# -MMD -MP: each object also depends on the headers it includes, so a
+# change to include/*.h rebuilds what uses it (kept out of CFLAGS, which
+# the sanitizer targets override).
+DEPFLAGS := -MMD -MP
+
 src/%.o: src/%.c
-	$(CC) $(CFLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) $(DEPFLAGS) -c -o $@ $<
 
 third_party/sqlite3.o: third_party/sqlite3.c
 	$(CC) -O2 -w -Ithird_party -DSQLITE_THREADSAFE=0 -DSQLITE_DEFAULT_WAL_SYNCHRONOUS=1 \
@@ -34,7 +39,7 @@ third_party/sqlite3.o: third_party/sqlite3.c
 	      -c -o $@ $<
 
 tests/%: tests/%.c $(filter-out src/main.o, $(OBJ)) $(SQLITE_OBJ)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDLIBS)
+	$(CC) $(CFLAGS) $(DEPFLAGS) -o $@ $(filter-out %.h,$^) $(LDLIBS)
 
 test: $(TEST_BIN)
 	@for t in $(TEST_BIN); do echo "=== $$t ==="; ./$$t || exit 1; done
@@ -53,7 +58,7 @@ valgrind: $(TEST_BIN)
 	done
 
 clean:
-	rm -f $(OBJ) $(SQLITE_OBJ) $(BIN) $(TEST_BIN)
+	rm -f $(OBJ) $(SQLITE_OBJ) $(BIN) $(TEST_BIN) $(OBJ:.o=.d) $(TEST_BIN:=.d)
 
 # ---- Sanitizer builds ----------------------------------------------------
 # ASan/UBSan find memory-safety + undefined-behaviour bugs that valgrind
@@ -139,3 +144,5 @@ eval: $(BIN) tests/eval_beir
 
 .PHONY: all test valgrind test-asan test-tsan check clean manual manual-smoke \
         manual-recall manual-gen manual-record manual-compare eval eval-ci
+
+-include $(OBJ:.o=.d) $(TEST_BIN:=.d)

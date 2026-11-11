@@ -51,3 +51,4 @@ dist/
 python/crag/_native*.so
 python/crag/__pycache__/
 python/tests/__pycache__/
+*.d
