@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include "crag.h"
 #include "store.h"
+#include "fts_italian.h"
 #include "test.h"
 
 static int approx(float a, float b) { return fabsf(a - b) < 1e-3f; }
@@ -607,6 +608,75 @@ static void test_cache_sees_this_and_other_connections_writes(void) {
     cleanup_db(p);
 }
 
+static int bm25_hits(crag_store_t *s, const char *q) {
+    crag_chunk_t r[4];
+    float sc[4];
+    int n = store_search_bm25(s, q, 4, r, sc);
+    for (int i = 0; i < n; i++) free_result_row(&r[i]);
+    return n;
+}
+
+static void test_fts_tokenizer_is_chosen_kept_and_changed(void) {
+    const char *p = "/tmp/crag_test_store_tok.db";
+    cleanup_db(p);
+    crag_store_t s;
+    setenv("CRAG_FTS_TOKENIZER", "porter", 1);
+    TEST_ASSERT(store_open(p, &s) == 0);
+    crag_chunk_t c = {0};
+    c.source = "t.md"; c.text = "The indexer keeps running"; c.dim = 4; c.vec[0] = 1.0f;
+    TEST_ASSERT(store_insert(&s, &c) == 0);
+    TEST_ASSERT(bm25_hits(&s, "runs") == 1);              /* porter: runs ~ running */
+    store_close(&s);
+
+    unsetenv("CRAG_FTS_TOKENIZER");                       /* the DB keeps its tokenizer */
+    TEST_ASSERT(store_open(p, &s) == 0);
+    TEST_ASSERT(bm25_hits(&s, "runs") == 1);
+    store_close(&s);
+
+    setenv("CRAG_FTS_TOKENIZER", "unicode61", 1);         /* rebuilt from chunks.text */
+    TEST_ASSERT(store_open(p, &s) == 0);
+    TEST_ASSERT(bm25_hits(&s, "runs") == 0);
+    TEST_ASSERT(bm25_hits(&s, "running") == 1);
+    store_close(&s);
+
+    setenv("CRAG_FTS_TOKENIZER", "klingon", 1);           /* unknown: refuse to open */
+    TEST_ASSERT(store_open(p, &s) != 0);
+    unsetenv("CRAG_FTS_TOKENIZER");
+    cleanup_db(p);
+}
+
+static void test_italian_stemmer_folds_gender_and_number(void) {
+    const char *in[]  = { "tumore", "tumori", "indici", "indice", "ricerche", "ricerca",
+                          "casa", "case", "ambito", "ambiti" };
+    const char *out[] = { "tumor", "tumor", "indic", "indic", "ricerc", "ricerc",
+                          "casa", "case", "ambit", "ambit" };
+    for (int i = 0; i < 10; i++) {
+        char buf[32];
+        int n = (int)strlen(in[i]);
+        memcpy(buf, in[i], (size_t)n);
+        n = fts_italian_stem_for_test(buf, n);
+        TEST_ASSERT((int)strlen(out[i]) == n && memcmp(buf, out[i], (size_t)n) == 0);
+    }
+}
+
+static void test_italian_tokenizer_matches_inflections(void) {
+    const char *p = "/tmp/crag_test_store_it.db";
+    cleanup_db(p);
+    crag_store_t s;
+    setenv("CRAG_FTS_TOKENIZER", "italian", 1);
+    TEST_ASSERT(store_open(p, &s) == 0);
+    crag_chunk_t c = {0};
+    c.source = "it.md"; c.text = "I tumori più frequenti negli adulti"; c.dim = 4; c.vec[0] = 1.0f;
+    TEST_ASSERT(store_insert(&s, &c) == 0);
+    TEST_ASSERT(bm25_hits(&s, "tumore frequente") == 1);
+    store_close(&s);
+    unsetenv("CRAG_FTS_TOKENIZER");
+    TEST_ASSERT(store_open(p, &s) == 0);              /* reopened: still readable */
+    TEST_ASSERT(bm25_hits(&s, "tumore") == 1);
+    store_close(&s);
+    cleanup_db(p);
+}
+
 int main(void) {
     fprintf(stderr, "test_store:\n");
     TEST_RUN(test_open_and_close);
@@ -629,5 +699,8 @@ int main(void) {
     TEST_RUN(test_delete_chunks_for_updates_fts);
     TEST_RUN(test_cache_and_stream_give_identical_scores);
     TEST_RUN(test_cache_sees_this_and_other_connections_writes);
+    TEST_RUN(test_fts_tokenizer_is_chosen_kept_and_changed);
+    TEST_RUN(test_italian_stemmer_folds_gender_and_number);
+    TEST_RUN(test_italian_tokenizer_matches_inflections);
     TEST_DONE();
 }

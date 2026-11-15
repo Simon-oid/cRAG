@@ -70,16 +70,12 @@ roadmap:
 These are genuinely useful at a *different* scale or for a *different* corpus
 than the current target. Each is left out on purpose, with its trigger named.
 
-### Configurable FTS tokenizer
+### Configurable FTS tokenizer — shipped (unreleased)
 
-Expose the FTS5 tokenizer via `CRAG_FTS_TOKENIZER=unicode61|trigram|porter`.
-
-- **Why not now:** the default `unicode61` already handles English and Romance
-  languages well, including Italian (the deployment target). `trigram` is for
-  CJK, which is out of scope.
-- **Trigger:** indexing a CJK corpus, or needing `porter` stemming for an
-  English keyword-heavy corpus. **Effort:** trivial (a pragma string at FTS
-  table creation; the cost is reindexing the existing DB).
+`CRAG_FTS_TOKENIZER=unicode61|porter|trigram|italian`, rebuilt from the
+stored text on change. Measured: `porter` +0.030 BM25 on SciFact, `italian`
++0.020 on SQuAD-it. Still open: making the tokenizer follow the corpus
+language by default. **Trigger:** a second language in the same index.
 
 ### Variable input formats (PDF / HTML)
 

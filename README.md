@@ -206,11 +206,21 @@ Three search modes, selected with `--search`:
   case folding and diacritic removal, **no stemming and no stop-word list**,
   in any language), one indexed column per chunk. That choice buys a mature,
   crash-safe inverted index inside the same SQLite file as the vectors, at
-  the cost of tuning: a dedicated IR toolkit with stemming does a little
-  better, e.g. on BEIR SciFact FTS5 scores nDCG@10 0.6540 against Anserini's
-  published 0.665. No stemming also means Italian inflections ("tumore" /
-  "tumori") do not match each other lexically; the dense side of `hybrid`
-  covers that.
+  the cost of tuning. `CRAG_FTS_TOKENIZER` picks the tokenizer: `porter`
+  (English stemming) or `italian` (cRAG's own: unicode61 plus a light
+  Italian stemmer, so "tumore" matches "tumori"). Measured, paired over the
+  same queries ([`docs/benchmarks.md`](docs/benchmarks.md#fts-tokenizer-2026-11-15)):
+
+  | | default `unicode61` | `porter` | `italian` |
+  |---|---|---|---|
+  | SciFact BM25 | 0.654 | **0.684** (+0.030, p 0.003) | — |
+  | SciFact hybrid | 0.733 | **0.756** (+0.023, p 0.004) | — |
+  | SQuAD-it BM25 | 0.803 | 0.804 (n.s.) | **0.823** (+0.020, p 0.02) |
+
+  With `porter`, FTS5 passes Anserini's published 0.665 on SciFact. The
+  default stays `unicode61` so an existing index keeps its rankings;
+  changing it rebuilds the FTS index from the stored text, without
+  re-embedding.
 - **`hybrid`** (default) — Reciprocal Rank Fusion (k=60) over the cosine and
   BM25 result pools. Robust to embedder weakness on rare-keyword queries.
 
@@ -265,6 +275,7 @@ precedence).
 | `CRAG_GEN_TEMP` | Generation sampling temperature (ollama). Default `0` (deterministic). |
 | `CRAG_GEN_K` | Cap the generation context to the top-N retrieved chunks (default: unset = feed all `--top-k`). `2` is the measured floor that helps larger gen models. |
 | `CRAG_VEC_CACHE_MB` | Cap on the in-memory copy of the vectors the cosine scan reads (default 2048; `0` disables it and the scan reads SQLite rows). |
+| `CRAG_FTS_TOKENIZER` | FTS5 tokenizer: `unicode61` (default), `porter` (English stemming), `italian` (light Italian stemming), `trigram`. Changing it rebuilds the BM25 index from the stored text. |
 | `ANTHROPIC_API_KEY` | Required for the Anthropic generation backend. |
 
 ## Benchmarks
@@ -285,8 +296,8 @@ On **BEIR SciFact**, cRAG's exact cosine scores nDCG@10 **0.7407** with
 `mxbai-embed-large` — in the published dense band, and verified **bit-for-bit
 against NumPy and FAISS `IndexFlatIP`** on identical vectors, so the engine adds
 zero retrieval loss over its embedder. The one true engine-vs-engine comparison
-is BM25, where cRAG's FTS5 scores **0.6540** vs Anserini's 0.665 (~1 point — the
-honest gap between an embedded FTS5 and a tuned IR toolkit). Full breakdown, the
+is BM25, where cRAG's FTS5 scores **0.6540** vs Anserini's 0.665 with the default
+tokenizer and **0.6837** with `CRAG_FTS_TOKENIZER=porter`. Full breakdown, the
 cross-embedder sweep, NFCorpus, and the per-query spot-check are in
 [`docs/benchmarks.md`](docs/benchmarks.md) and the
 [performance report](docs/crag-performance-report.pdf).

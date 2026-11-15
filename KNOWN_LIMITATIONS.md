@@ -40,11 +40,16 @@ one. Unless noted: Ryzen 7 5800X, Ollama 0.40.4 embedders, measured
   embedder: an English model on Italian text collapses cosine to 0.556 and
   hybrid recovers +0.18. There, BM25 alone (0.803) does better still
   ([`docs/eval-significance.md`](docs/eval-significance.md)).
-- **The BM25 is SQLite FTS5's, untuned:**
-  - default parameters, `unicode61` tokenizer, no stemming, no stop words;
-  - "tumore" and "tumori" do not match lexically;
-  - on SciFact it scores nDCG@10 0.654, against 0.665 published for
-    Anserini with stemming.
+- **The BM25 is SQLite FTS5's, with default parameters:**
+  - the default tokenizer `unicode61` does no stemming: "tumore" and "tumori"
+    do not match. `CRAG_FTS_TOKENIZER=porter` (English) or `italian` fixes it,
+    measured +0.030 on SciFact and +0.020 on SQuAD-it, but is opt-in;
+  - `italian` is a light stemmer (gender and number endings only), not
+    Snowball: "indicizzazione" and "indicizzare" still differ;
+  - a database built with `italian` can be read only through cRAG (it
+    registers the tokenizer): the stock `sqlite3` shell cannot query its
+    FTS table;
+  - no stop words, no tuning of k1 and b.
 - **The evaluation has blind spots:**
   - relevance is binary;
   - SQuAD-it has one relevant paragraph per question and is a

@@ -19,6 +19,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- `CRAG_FTS_TOKENIZER` picks the FTS5 tokenizer: `unicode61` (default),
+  `porter`, `trigram`, or `italian` (new, `src/fts_italian.c`: unicode61
+  plus Savoy's light Italian stemmer). Changing it rebuilds the FTS index
+  from `chunks.text` on open, without re-embedding; unset, a database keeps
+  its tokenizer; an unknown name refuses to open. Measured, paired:
+  SciFact BM25 0.654 → 0.684 with `porter` (+0.030 [+0.010, +0.050]),
+  hybrid 0.733 → 0.756; SQuAD-it BM25 0.803 → 0.823 with `italian`
+  (+0.020 [+0.004, +0.037]).
+
 - **Exact cosine search 8–9× faster**, level with FAISS `IndexFlatIP`: at
   100k × 1024, 112 → 11.9 ms P50 (FAISS 10.5, NumPy 15.3), same top-10 as
   NumPy for every query (`docs/bench-vs-numpy-faiss.md`). Three changes:

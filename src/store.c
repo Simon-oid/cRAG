@@ -6,6 +6,7 @@
 #include <sqlite3.h>
 #include "store.h"
 #include "search.h"
+#include "fts_italian.h"
 #include "crag.h"
 
 static const char *SCHEMA =
@@ -36,6 +37,73 @@ static const char *SCHEMA =
     "  INSERT INTO chunks_fts(chunks_fts, rowid, text) VALUES('delete', old.id, old.text);"
     "END;";
 
+/* CRAG_FTS_TOKENIZER picks the FTS5 tokenizer of chunks_fts. Unset: the
+   database keeps the one it has (unicode61 for a new one). Set to a
+   different one: the index is rebuilt from chunks.text, without
+   re-embedding anything. */
+static const struct { const char *name, *spec; } FTS_TOKENIZERS[] = {
+    { "unicode61", "unicode61" },          /* no stemming: tumore != tumori */
+    { "porter",    "porter unicode61" },   /* English stemming */
+    { "trigram",   "trigram" },            /* substrings; CJK, code */
+    { "italian",   "italian" },            /* unicode61 + light Italian stemmer */
+};
+
+static const char *fts_spec_for(const char *name) {
+    for (size_t i = 0; i < sizeof FTS_TOKENIZERS / sizeof FTS_TOKENIZERS[0]; i++)
+        if (strcmp(name, FTS_TOKENIZERS[i].name) == 0) return FTS_TOKENIZERS[i].spec;
+    return NULL;
+}
+
+/* The tokenize= argument chunks_fts was created with ("unicode61" when it
+   has none, FTS5's default). Caller frees. */
+static char *fts_current_spec(sqlite3 *db) {
+    sqlite3_stmt *st;
+    char *out = NULL;
+    if (sqlite3_prepare_v2(db, "SELECT sql FROM sqlite_master WHERE name='chunks_fts'",
+                           -1, &st, NULL) != SQLITE_OK) return NULL;
+    if (sqlite3_step(st) == SQLITE_ROW) {
+        const char *sql = (const char *)sqlite3_column_text(st, 0);
+        const char *t = sql ? strstr(sql, "tokenize='") : NULL;
+        if (t) {
+            t += strlen("tokenize='");
+            const char *e = strchr(t, '\'');
+            if (e) out = strndup(t, (size_t)(e - t));
+        } else {
+            out = strdup("unicode61");
+        }
+    }
+    sqlite3_finalize(st);
+    return out;
+}
+
+static int fts_apply_tokenizer(sqlite3 *db) {
+    const char *name = getenv("CRAG_FTS_TOKENIZER");
+    if (!name || !*name) return 0;
+    const char *spec = fts_spec_for(name);
+    if (!spec) {
+        fprintf(stderr, "store: unknown CRAG_FTS_TOKENIZER '%s' (unicode61, porter, trigram, italian)\n",
+                name);
+        return -1;
+    }
+    char *cur = fts_current_spec(db);
+    int same = cur && strcmp(cur, spec) == 0;
+    free(cur);
+    if (same) return 0;
+    char sql[512];
+    snprintf(sql, sizeof sql,
+             "DROP TABLE IF EXISTS chunks_fts;"
+             "CREATE VIRTUAL TABLE chunks_fts USING fts5("
+             "  text, content='chunks', content_rowid='id', tokenize='%s');"
+             "INSERT INTO chunks_fts(chunks_fts) VALUES('rebuild');", spec);
+    char *err = NULL;
+    if (sqlite3_exec(db, sql, NULL, NULL, &err) != SQLITE_OK) {
+        fprintf(stderr, "store: FTS tokenizer %s: %s\n", name, err ? err : "?");
+        sqlite3_free(err);
+        return -1;
+    }
+    return 0;
+}
+
 int store_open(const char *path, crag_store_t *s) {
     s->db = NULL;
     memset(&s->cache, 0, sizeof s->cache);
@@ -53,9 +121,22 @@ int store_open(const char *path, crag_store_t *s) {
         s->db = NULL;
         return -1;
     }
+    /* Before the schema and the tokenizer check: a database indexed with
+       "italian" cannot even be read without it. */
+    if (fts_italian_register(s->db) != 0) {
+        fprintf(stderr, "store: cannot register the italian FTS5 tokenizer\n");
+        sqlite3_close(s->db);
+        s->db = NULL;
+        return -1;
+    }
     if (sqlite3_exec(s->db, SCHEMA, NULL, NULL, &err) != SQLITE_OK) {
         fprintf(stderr, "store: schema: %s\n", err ? err : "?");
         sqlite3_free(err);
+        sqlite3_close(s->db);
+        s->db = NULL;
+        return -1;
+    }
+    if (fts_apply_tokenizer(s->db) != 0) {
         sqlite3_close(s->db);
         s->db = NULL;
         return -1;

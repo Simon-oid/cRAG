@@ -23,6 +23,25 @@ vector cache (`crag_vec_cache_t`), an 8-lane dot product whose summation
 order is fixed in C (the same bits on SSE2 and AVX2), and a top-k that keeps
 (score, id) instead of copying 16 KB result structs.
 
+## FTS tokenizer (2026-11-15)
+
+`mxbai-embed-large` index, the FTS table rebuilt per tokenizer from the same
+chunks; nDCG@10, paired bootstrap 95% interval and sign-flip permutation p
+over the same queries (unicode61 → candidate).
+
+| Dataset (queries) | Mode | `unicode61` | `porter` | `italian` |
+|---|---|---|---|---|
+| SciFact (300) | bm25 | 0.6540 | 0.6837 (+0.0297 [+0.0101, +0.0498], p 0.003) | — |
+| SciFact (300) | hybrid | 0.7328 | 0.7562 (+0.0234 [+0.0073, +0.0406], p 0.004) | — |
+| SQuAD-it (500) | bm25 | 0.8030 | 0.8038 (+0.0008, p 0.89) | 0.8226 (+0.0197 [+0.0036, +0.0366], p 0.02) |
+| SQuAD-it (500) | hybrid | 0.7366 | 0.7345 (−0.0020, p 0.29) | 0.7370 (+0.0004, p 0.94) |
+
+Cosine does not depend on the tokenizer (0.7421 SciFact, 0.5555 SQuAD-it).
+With `porter`, hybrid − cosine on SciFact is +0.014 [−0.009, +0.038], p 0.25:
+still not a significant win for hybrid with a suitable embedder. On SQuAD-it
+the English embedder is the weak side, so the stemmer lifts BM25 and leaves
+hybrid where it was.
+
 ## Retrieval quality with uncertainty (2026-11-09)
 
 Means alone cannot tell whether hybrid beats cosine. Since 2026-11-09 every
