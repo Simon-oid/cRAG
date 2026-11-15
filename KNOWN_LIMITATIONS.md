@@ -68,7 +68,12 @@ one. Unless noted: Ryzen 7 5800X, Ollama 0.40.4 embedders, measured
 
 ## Inputs
 
-- **Text and Markdown only.** No PDF, HTML or office formats.
+- **Text, Markdown and HTML; no PDF or office formats.** HTML is converted
+  in-process (`src/html.c`): tags, scripts and styles removed, headings
+  kept as Markdown. It is not a full HTML5 parser: no DOM, no CSS, so text
+  hidden with CSS is indexed and a page's navigation and footer are indexed
+  with its content. PDF would need a library or an external tool; convert
+  it before indexing (`pdftotext`).
 - **Chunking is heuristic:** headers, code fences, then a sliding window
   that prefers sentence boundaries. Tables and lists can be split mid-way.
 - **The embedder's context window bounds a chunk.** Oversized chunks are

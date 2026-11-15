@@ -37,6 +37,7 @@
 #include <string.h>
 
 #include "util.h"
+#include "html.h"
 #include "test.h"
 
 /* non-static in src/rerank_llamacpp.c */
@@ -184,6 +185,41 @@ static void fuzz_rerank_parse(const char *in) {
     free(s);
 }
 
+/* html_to_text: never NULL on success-sized input, output bounded (the
+   largest growth is "<h6>" -> "\n\n###### ", 9 bytes for 4), and ASan
+   catches any out-of-bounds read of a truncated tag or entity. */
+static const char *const HTML_BITS[] = {
+    "<h1>", "<h6>", "</h3>", "<p>", "</p>", "<li>", "<br>", "<pre>", "</pre>",
+    "<script>", "</script>", "<style>", "<!--", "-->", "<!doctype html>", "<?x",
+    "<a href=\"", "'>", "\">", "&amp;", "&#", "&#x", "&#xD800;", "&#1114112;",
+    "&nbsp;", "&", ";", "<", ">", " ", "\n", "text", "\xC3\xA9", "<td>",
+};
+
+static char *gen_html(size_t *len) {
+    size_t cap = 512, n = 0;
+    char *out = malloc(cap);
+    if (!out) { perror("malloc"); exit(2); }
+    int pieces = (int)xs_below(40);
+    for (int k = 0; k < pieces; k++) {
+        const char *b = HTML_BITS[xs_below(sizeof HTML_BITS / sizeof HTML_BITS[0])];
+        size_t bl = strlen(b);
+        if (n + bl + 1 > cap) break;
+        memcpy(out + n, b, bl);
+        n += bl;
+    }
+    out[n] = '\0';
+    *len = n;
+    return out;
+}
+
+static void fuzz_html(const char *in, size_t len) {
+    size_t out_len = 0;
+    char *out = html_to_text(in, len, &out_len);
+    TEST_ASSERT(out != NULL);
+    TEST_ASSERT(out_len <= 3 * len + 8);
+    free(out);
+}
+
 /* ---- harness ---------------------------------------------------------- */
 
 static void test_fuzz_all_parsers(void) {
@@ -200,7 +236,11 @@ static void test_fuzz_all_parsers(void) {
         fuzz_json_escape(in);
         fuzz_extract_floats(in);
         fuzz_rerank_parse(in);
+        fuzz_html(in, len);
         free(in);
+        char *h = gen_html(&len);
+        fuzz_html(h, len);
+        free(h);
     }
 }
 

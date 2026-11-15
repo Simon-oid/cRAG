@@ -239,6 +239,9 @@ piped or redirected. JSON output stays unmarked; cosine output is unchanged.
   contents from the splitter. Short multi-section files coalesce into one chunk;
   long sections fall through to a sliding-window split with sentence-boundary
   preference.
+- **HTML too** (`--ext html`). Converted in-process: tags, scripts and
+  styles removed, entities decoded, `<h1>`–`<h6>` turned into Markdown
+  headings so the splitter above applies.
 - **Incremental.** A `files` table keyed on `(path, mtime, size)` drives
   skip-unchanged on rerun. Files removed from disk are swept from the DB.
   `--force` bypasses the skip path.
@@ -421,14 +424,13 @@ cRAG is at **v0.2.0**: the engine, a stable C library API, the
 valgrind + ASan/UBSan + TSan + offline eval). Retrieval is at the architecture
 ceiling for the personal/single-tenant target; the live levers are
 generation/reasoning and the agent-side abstention contract, not new retrieval
-machinery. Deferred work (HNSW, PDF/HTML, Windows port, configurable FTS
-tokenizer) is gated on a real need — see [`ROADMAP.md`](ROADMAP.md).
+machinery. Deferred work (HNSW, PDF, Windows port) is gated on a real need — see [`ROADMAP.md`](ROADMAP.md).
 
 ## Limitations
 
 [`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md) lists where cRAG stops, with the
 numbers: an exact scan that holds a copy of every vector in RAM, hybrid that does not beat cosine with a good embedder, an untuned
-FTS5 BM25, text and Markdown only, Linux and macOS only.
+FTS5 BM25, text, Markdown and HTML only, Linux and macOS only.
 
 ## License
 

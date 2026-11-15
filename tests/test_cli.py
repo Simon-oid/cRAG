@@ -231,6 +231,20 @@ class CliTest(unittest.TestCase):
         self.assertNotEqual(self.crag("frobnicate", ok=False).returncode, 0)
         self.assertIn("0.2.0", self.crag("--version").stdout + self.crag("--version").stderr)
 
+    def test_html_is_indexed_as_text(self):
+        (self.corpus / "page.html").write_text(
+            "<html><head><script>var tracking = 1;</script></head><body>"
+            "<h1>Quantization</h1><p>Int8 vectors cut memory &amp; keep recall.</p>"
+            "</body></html>")
+        self.crag("index", str(self.corpus), "--ext", "html")
+        hits = self.query_json("int8 quantization memory", "-k", "1")
+        text = hits[0]["text"]
+        self.assertIn("page.html", hits[0]["source"])
+        self.assertIn("# Quantization", text)
+        self.assertIn("memory & keep", text)
+        self.assertNotIn("<", text)
+        self.assertNotIn("tracking", text)
+
     def test_an_unreachable_embedder_is_an_error_not_an_empty_index(self):
         p = self.crag("index", str(self.corpus), ok=False,
                       CRAG_EMBED_URL="http://127.0.0.1:9/embedding")

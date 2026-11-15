@@ -3,7 +3,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <strings.h>
 #include "chunk.h"
+#include "html.h"
 
 static char *read_file(const char *path, size_t *out_len) {
     FILE *f = fopen(path, "rb");
@@ -21,9 +23,18 @@ static char *read_file(const char *path, size_t *out_len) {
     return buf;
 }
 
+static int ends_with_ci(const char *s, const char *suffix) {
+    size_t n = strlen(s), k = strlen(suffix);
+    return n >= k && strcasecmp(s + n - k, suffix) == 0;
+}
+
 static int is_md(const char *path) {
     size_t n = strlen(path);
     return n >= 3 && strcmp(path + n - 3, ".md") == 0;
+}
+
+static int is_html(const char *path) {
+    return ends_with_ci(path, ".html") || ends_with_ci(path, ".htm");
 }
 
 /* Returns 1 if line starting at p (in buf) is an MD header and not inside a fence. */
@@ -147,6 +158,14 @@ int chunk_file(const char *path, int max_chars,
     if (!buf) return -1;
 
     int md = is_md(path);
+    if (is_html(path)) {
+        /* Headings come out as Markdown, so the Markdown splitter applies. */
+        char *text = html_to_text(buf, len, &len);
+        free(buf);
+        if (!text) return -1;
+        buf = text;
+        md = 1;
+    }
 
     /* scan code fences */
     size_t fs[256], fe[256];

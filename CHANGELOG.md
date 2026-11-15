@@ -8,6 +8,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- HTML input (`--ext html`): `src/html.c` converts it in-process, no new
+  dependency. Scripts, styles and comments dropped, entities decoded to
+  UTF-8 (invalid code points to U+FFFD), headings kept as Markdown so the
+  Markdown chunker splits on them. Unit tests, fuzzed in `test_fuzz` with
+  an HTML-fragment generator, and covered by `test-cli`.
 - `make test-cli` (`tests/test_cli.py`): the CLI end to end against fake
   llama.cpp, Ollama, OpenAI and Anthropic servers on localhost: index,
   query in the three modes, `--generate` through three backends,

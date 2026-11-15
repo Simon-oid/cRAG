@@ -77,16 +77,13 @@ stored text on change. Measured: `porter` +0.030 BM25 on SciFact, `italian`
 +0.020 on SQuAD-it. Still open: making the tokenizer follow the corpus
 language by default. **Trigger:** a second language in the same index.
 
-### Variable input formats (PDF / HTML)
+### Input formats — HTML shipped (unreleased), PDF deferred
 
-Ingest PDF/HTML in addition to `.txt`/`.md`.
-
-- **Why not now:** the easy path (shell out to `pdftotext` / `lynx -dump`) adds
-  a runtime dependency to a project whose value is "pure C11, minimal deps." The
-  current design keeps PDF *outside* cRAG and documents the one-liner pre-ingest
-  step (`find . -name "*.pdf" -exec pdftotext {} {}.txt \;`).
-- **Trigger:** a real consumer must ingest PDF/HTML and external preprocessing
-  is unacceptable. **Effort:** small if shelling out; weigh against portability.
+HTML is converted in-process, without a dependency (`src/html.c`, fuzzed in
+`test_fuzz`). PDF stays outside: parsing it needs a library or a child
+process, against "pure C11, minimal deps". The pre-ingest step is
+`find . -name "*.pdf" -exec pdftotext {} {}.txt \;`. **Trigger:** a consumer
+for whom external preprocessing is unacceptable.
 
 ### ANN index (HNSW) — a *latency* optimization
 
