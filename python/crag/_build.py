@@ -46,7 +46,7 @@ ffibuilder.cdef(CDEF)
 ffibuilder.set_source(
     "crag._native",
     '#include "crag_lib.h"',
-    sources=["src/lib.c", "src/store.c", "src/search.c", "src/errstr.c",
+    sources=["src/lib.c", "src/store.c", "src/search.c", "src/errstr.c", "src/fts_italian.c",
              "third_party/sqlite3.c"],
     include_dirs=["include", "third_party"],
     # Same SQLite configuration as the Makefile's build of the crag program.

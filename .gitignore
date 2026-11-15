@@ -53,3 +53,4 @@ python/crag/__pycache__/
 python/tests/__pycache__/
 *.d
 coverage.txt
+__pycache__/
