@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 200809L  /* setenv */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -535,6 +536,77 @@ static void test_delete_chunks_for_updates_fts(void) {
     cleanup_db(p);
 }
 
+/* 200 vectors of dim 37 (not a multiple of the 8 lanes, so the tail runs). */
+static void fill_store(crag_store_t *s, int count) {
+    crag_chunk_t c = {0};
+    c.source = "v.md"; c.text = "v"; c.dim = 37;
+    for (int i = 0; i < count; i++) {
+        for (int d = 0; d < 37; d++) c.vec[d] = sinf((float)(i * 37 + d) * 0.37f);
+        TEST_ASSERT(store_insert(s, &c) == 0);
+    }
+}
+
+static void test_cache_and_stream_give_identical_scores(void) {
+    const char *p = "/tmp/crag_test_store_cache.db";
+    cleanup_db(p);
+    crag_store_t a, b;
+    TEST_ASSERT(store_open(p, &a) == 0);
+    fill_store(&a, 200);
+    TEST_ASSERT(store_open(p, &b) == 0);
+    float q[37];
+    for (int d = 0; d < 37; d++) q[d] = cosf((float)d);
+    crag_chunk_t ra[10], rb[10];
+    float sa[10], sb[10];
+    unsetenv("CRAG_VEC_CACHE_MB");
+    int na = store_search(&a, q, 37, 10, ra, sa);
+    TEST_ASSERT(a.cache.valid && a.cache.n == 200);
+    setenv("CRAG_VEC_CACHE_MB", "0", 1);
+    int nb = store_search(&b, q, 37, 10, rb, sb);
+    unsetenv("CRAG_VEC_CACHE_MB");
+    TEST_ASSERT(!b.cache.valid);
+    TEST_ASSERT(na == 10 && nb == 10);
+    for (int i = 0; i < 10; i++) {
+        TEST_ASSERT(ra[i].id == rb[i].id);
+        TEST_ASSERT(memcmp(&sa[i], &sb[i], sizeof(float)) == 0);
+        TEST_ASSERT(memcmp(ra[i].vec, rb[i].vec, 37 * sizeof(float)) == 0);
+        free_result_row(&ra[i]);
+        free_result_row(&rb[i]);
+    }
+    store_close(&a);
+    store_close(&b);
+    cleanup_db(p);
+}
+
+static void test_cache_sees_this_and_other_connections_writes(void) {
+    const char *p = "/tmp/crag_test_store_cache2.db";
+    cleanup_db(p);
+    crag_store_t a, b;
+    TEST_ASSERT(store_open(p, &a) == 0);
+    fill_store(&a, 50);
+    float q[37] = {0};
+    q[0] = 1.0f;
+    crag_chunk_t r[1];
+    float sc[1];
+    TEST_ASSERT(store_search(&a, q, 37, 1, r, sc) == 1);
+    free_result_row(&r[0]);
+
+    crag_chunk_t c = {0};
+    c.source = "mine.md"; c.text = "mine"; c.dim = 37; c.vec[0] = 1.0f;
+    TEST_ASSERT(store_insert(&a, &c) == 0);                 /* this connection */
+    TEST_ASSERT(store_search(&a, q, 37, 1, r, sc) == 1);
+    TEST_ASSERT(strcmp(r[0].source, "mine.md") == 0 && a.cache.n == 51);
+    free_result_row(&r[0]);
+
+    TEST_ASSERT(store_open(p, &b) == 0);                    /* another one */
+    TEST_ASSERT(store_delete_chunks_for(&b, "mine.md") >= 0);
+    store_close(&b);
+    TEST_ASSERT(store_search(&a, q, 37, 1, r, sc) == 1);
+    TEST_ASSERT(strcmp(r[0].source, "mine.md") != 0 && a.cache.n == 50);
+    free_result_row(&r[0]);
+    store_close(&a);
+    cleanup_db(p);
+}
+
 int main(void) {
     fprintf(stderr, "test_store:\n");
     TEST_RUN(test_open_and_close);
@@ -555,5 +627,7 @@ int main(void) {
     TEST_RUN(test_hybrid_dedupes_shared_results);
     TEST_RUN(test_hybrid_scores_bm25_only_hit);
     TEST_RUN(test_delete_chunks_for_updates_fts);
+    TEST_RUN(test_cache_and_stream_give_identical_scores);
+    TEST_RUN(test_cache_sees_this_and_other_connections_writes);
     TEST_DONE();
 }

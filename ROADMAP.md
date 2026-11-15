@@ -118,13 +118,13 @@ Store int8 (or PQ) vectors instead of float32 to cut RAM.
   float32 oracle, not assumed free.
 - **Trigger:** the corpus no longer fits in RAM (roughly ~1M+ chunks).
 
-### Exact-scan SIMD / threading + a float32 oracle
+### Exact-scan SIMD — shipped (unreleased)
 
-The cheapest forward-looking lever: SIMD/multithread the *exact* cosine scan and
-add a float32 oracle harness that acts as a recall + determinism regression gate
-for any future backend. It keeps exactness, costs no virtue, and defers the
-entire ANN question. **Trigger:** the exact scan becomes a measured bottleneck
-before the corpus outgrows RAM.
+The exact scan reads an in-memory vector cache with an 8-lane dot product
+(8–9× faster, level with FAISS `IndexFlatIP`), checked against a
+double-precision brute force by `make bench-scan`. Still open: threading the
+scan across cores. **Trigger:** a corpus where one thread's ~12 ms per 100k
+chunks is user-visible.
 
 ### Windows port
 

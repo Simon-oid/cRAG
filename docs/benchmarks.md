@@ -9,17 +9,19 @@ dim 1024, 200 queries one at a time. Full table:
 
 | N | cRAG P50 / P95 ms | NumPy P50 / P95 ms | FAISS IndexFlatIP (1 thread) P50 / P95 ms | Peak RSS cRAG / NumPy / FAISS MB |
 |---|---|---|---|---|
-| 10,000 | 10.5 / 10.8 | 0.5 / 1.6 | 1.1 / 1.1 | 129 / 118 / 133 |
-| 100,000 | 112.0 / 112.8 | 15.4 / 16.3 | 10.5 / 11.4 | 909 / 822 / 836 |
+| 10,000 | 1.28 / 1.34 | 0.55 / 0.78 | 1.09 / 1.20 | 168 / 118 / 134 |
+| 100,000 | 11.90 / 12.49 | 15.33 / 16.55 | 10.50 / 11.22 | 1301 / 822 / 837 |
 
-All three return the same top-10 for every query (exact search). cRAG is about
-10× slower than FAISS and 7× slower than NumPy, linear in N, with similar
-memory. The cause is structural: each query re-reads every vector as a SQLite
-BLOB and scores it with a plain scalar loop, while NumPy (BLAS) and FAISS scan
-one contiguous in-memory matrix with SIMD. The fix, if speed matters more
-than the single-file simplicity, is a contiguous in-memory vector cache plus a
-SIMD dot product; until then cRAG's exact scan is comfortable at ≤ 100k chunks
-(~0.1 s) and not the right tool beyond.
+Measured 2026-11-15. All three return the same top-10 for every query (exact
+search). cRAG is now level with FAISS (13% slower at 100k) and faster than
+NumPy at 100k, at the cost of memory: it keeps a contiguous copy of the
+vectors next to SQLite's pages. On 2026-11-09 it was 10.5 / 112 ms, 8–9×
+slower: each query re-read every vector as a SQLite BLOB (behind the text,
+in an overflow chain) and scored it with one scalar accumulator, which the
+compiler cannot vectorise without reassociating. The fix was the in-memory
+vector cache (`crag_vec_cache_t`), an 8-lane dot product whose summation
+order is fixed in C (the same bits on SSE2 and AVX2), and a top-k that keeps
+(score, id) instead of copying 16 KB result structs.
 
 ## Retrieval quality with uncertainty (2026-11-09)
 

@@ -1,4 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -37,6 +38,7 @@ static const char *SCHEMA =
 
 int store_open(const char *path, crag_store_t *s) {
     s->db = NULL;
+    memset(&s->cache, 0, sizeof s->cache);
     if (sqlite3_open(path, &s->db) != SQLITE_OK) {
         fprintf(stderr, "store: %s\n", sqlite3_errmsg(s->db));
         sqlite3_close(s->db);
@@ -121,63 +123,167 @@ int store_insert(crag_store_t *s, const crag_chunk_t *chunk) {
     return rc == SQLITE_DONE ? 0 : -1;
 }
 
-int store_search(crag_store_t *s, const float *qvec, int dim, int k,
-                 crag_chunk_t *results, float *scores) {
+/* Fill results[i] (source, text, vector) for a chunk id already ranked. */
+static int load_chunk(crag_store_t *s, int id, crag_chunk_t *out) {
     sqlite3_stmt *stmt;
-    const char *sql = "SELECT id,source,text,dim,vec FROM chunks";
-    if (sqlite3_prepare_v2(s->db, sql, -1, &stmt, NULL) != SQLITE_OK) return -1;
-
-    if (dim <= 0 || dim > CRAG_EMBED_DIM_MAX) { sqlite3_finalize(stmt); return -1; }
-
-    int n = 0;
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
-        int rdim = sqlite3_column_int(stmt, 3);
-        if (rdim != dim) continue;
-        if (rdim <= 0 || rdim > CRAG_EMBED_DIM_MAX) continue;
-
-        int vbytes = sqlite3_column_bytes(stmt, 4);
-        if (vbytes != rdim * (int)sizeof(float)) continue;
-
-        const float *rvec = sqlite3_column_blob(stmt, 4);
-        if (!rvec) continue;
-        float score = search_cosine(qvec, rvec, dim);
-
-        if (n < k) {
-            char *src = strdup((const char *)sqlite3_column_text(stmt, 1));
-            char *txt = strdup((const char *)sqlite3_column_text(stmt, 2));
-            if (!src || !txt) { free(src); free(txt); continue; }
-            results[n].id     = sqlite3_column_int(stmt, 0);
-            results[n].source = src;
-            results[n].text   = txt;
-            results[n].dim    = rdim;
-            memcpy(results[n].vec, rvec, (size_t)rdim * sizeof(float));
-            scores[n] = score;
-            /* insertion sort */
-            for (int i = n; i > 0 && scores[i] > scores[i-1]; i--) {
-                float ts = scores[i]; scores[i] = scores[i-1]; scores[i-1] = ts;
-                crag_chunk_t tc = results[i]; results[i] = results[i-1]; results[i-1] = tc;
-            }
-            n++;
-        } else if (score > scores[n-1]) {
-            char *src = strdup((const char *)sqlite3_column_text(stmt, 1));
-            char *txt = strdup((const char *)sqlite3_column_text(stmt, 2));
-            if (!src || !txt) { free(src); free(txt); continue; }
-            free(results[n-1].source);
-            free(results[n-1].text);
-            results[n-1].id     = sqlite3_column_int(stmt, 0);
-            results[n-1].source = src;
-            results[n-1].text   = txt;
-            results[n-1].dim    = rdim;
-            memcpy(results[n-1].vec, rvec, (size_t)rdim * sizeof(float));
-            scores[n-1] = score;
-            for (int i = n-1; i > 0 && scores[i] > scores[i-1]; i--) {
-                float ts = scores[i]; scores[i] = scores[i-1]; scores[i-1] = ts;
-                crag_chunk_t tc = results[i]; results[i] = results[i-1]; results[i-1] = tc;
-            }
+    if (sqlite3_prepare_v2(s->db, "SELECT source,text,dim,vec FROM chunks WHERE id=?",
+                           -1, &stmt, NULL) != SQLITE_OK) return -1;
+    sqlite3_bind_int(stmt, 1, id);
+    int rc = -1;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        int dim = sqlite3_column_int(stmt, 2);
+        const void *vec = sqlite3_column_blob(stmt, 3);
+        char *src = strdup((const char *)sqlite3_column_text(stmt, 0));
+        char *txt = strdup((const char *)sqlite3_column_text(stmt, 1));
+        if (src && txt && vec && dim > 0 && dim <= CRAG_EMBED_DIM_MAX) {
+            out->id = id;
+            out->source = src;
+            out->text = txt;
+            out->dim = dim;
+            memcpy(out->vec, vec, (size_t)dim * sizeof(float));
+            rc = 0;
+        } else {
+            free(src);
+            free(txt);
         }
     }
     sqlite3_finalize(stmt);
-    return n;
+    return rc;
+}
+
+#define VEC_CACHE_DEFAULT_MB 2048
+
+static void cache_free(crag_vec_cache_t *c) {
+    free(c->ids);
+    free(c->vecs);
+    free(c->norms);
+    memset(c, 0, sizeof *c);
+}
+
+
+static long long data_version(sqlite3 *db) {
+    sqlite3_stmt *stmt;
+    long long v = -1;
+    if (sqlite3_prepare_v2(db, "PRAGMA data_version", -1, &stmt, NULL) != SQLITE_OK) return -1;
+    if (sqlite3_step(stmt) == SQLITE_ROW) v = sqlite3_column_int64(stmt, 0);
+    sqlite3_finalize(stmt);
+    return v;
+}
+
+static size_t cache_cap_bytes(void) {
+    const char *e = getenv("CRAG_VEC_CACHE_MB");
+    long mb = e && *e ? strtol(e, NULL, 10) : VEC_CACHE_DEFAULT_MB;
+    return mb > 0 ? (size_t)mb << 20 : 0;
+}
+
+/* 0: the cache holds every vector of `dim`; -1: no cache (too big, disabled,
+   out of memory, or a read error), and the caller streams from SQLite. */
+static int cache_ensure(crag_store_t *s, int dim) {
+    crag_vec_cache_t *c = &s->cache;
+    long long dv = data_version(s->db);
+    long long tc = sqlite3_total_changes64(s->db);
+    if (c->valid && c->dim == dim && c->data_version == dv && c->total_changes == tc) return 0;
+    cache_free(c);
+    size_t cap = cache_cap_bytes();
+    if (cap == 0 || dv < 0) return -1;
+
+    sqlite3_stmt *stmt;
+    long long rows = 0;
+    if (sqlite3_prepare_v2(s->db, "SELECT COUNT(*) FROM chunks WHERE dim=?", -1, &stmt, NULL)
+            != SQLITE_OK) return -1;
+    sqlite3_bind_int(stmt, 1, dim);
+    if (sqlite3_step(stmt) == SQLITE_ROW) rows = sqlite3_column_int64(stmt, 0);
+    sqlite3_finalize(stmt);
+    size_t bytes = (size_t)rows * ((size_t)dim * sizeof(float) + sizeof(float) + sizeof(int));
+    if (rows <= 0 || bytes > cap) return -1;
+
+    c->ids = malloc((size_t)rows * sizeof *c->ids);
+    c->vecs = malloc((size_t)rows * (size_t)dim * sizeof *c->vecs);
+    c->norms = malloc((size_t)rows * sizeof *c->norms);
+    if (!c->ids || !c->vecs || !c->norms) { cache_free(c); return -1; }
+    if (sqlite3_prepare_v2(s->db, "SELECT id,vec FROM chunks WHERE dim=?", -1, &stmt, NULL)
+            != SQLITE_OK) { cache_free(c); return -1; }
+    sqlite3_bind_int(stmt, 1, dim);
+    int n = 0;
+    while (n < rows && sqlite3_step(stmt) == SQLITE_ROW) {
+        if (sqlite3_column_bytes(stmt, 1) != dim * (int)sizeof(float)) continue;
+        const float *v = sqlite3_column_blob(stmt, 1);
+        if (!v) continue;
+        float *dst = c->vecs + (size_t)n * dim;
+        memcpy(dst, v, (size_t)dim * sizeof(float));
+        float vv, norm2;
+        search_dot_norm(dst, dst, dim, &vv, &norm2);
+        c->norms[n] = sqrtf(norm2);
+        c->ids[n] = sqlite3_column_int(stmt, 0);
+        n++;
+    }
+    sqlite3_finalize(stmt);
+    c->n = n;
+    c->dim = dim;
+    c->data_version = dv;
+    c->total_changes = tc;
+    c->valid = 1;
+    return 0;
+}
+
+/* Enter (score, id) into the running top k (scores descending). Ties keep
+   the earlier row ahead: a row enters only with a strictly higher score. */
+static void topk_offer(float score, int id, int k, int *n, float *scores, int *ids) {
+    if (*n == k && !(score > scores[k - 1])) return;
+    int i = *n < k ? (*n)++ : k - 1;
+    for (; i > 0 && score > scores[i - 1]; i--) {
+        scores[i] = scores[i - 1];
+        ids[i] = ids[i - 1];
+    }
+    scores[i] = score;
+    ids[i] = id;
+}
+
+/* The scan keeps only (score, id) for the running top k and loads text and
+   vector for the winners afterwards: before, every row entering the top k
+   was strdup'd, and the insertion sort swapped whole crag_chunk_t values,
+   16 KB each with their inline vector. It reads the vector cache when there
+   is one, SQLite rows otherwise; both give the same scores to the bit. */
+int store_search(crag_store_t *s, const float *qvec, int dim, int k,
+                 crag_chunk_t *results, float *scores) {
+    if (dim <= 0 || dim > CRAG_EMBED_DIM_MAX || k <= 0) return -1;
+    int *ids = malloc((size_t)k * sizeof *ids);
+    if (!ids) return -1;
+    sqlite3_stmt *stmt;
+    if (sqlite3_prepare_v2(s->db, "SELECT id,dim,vec FROM chunks", -1, &stmt, NULL)
+            != SQLITE_OK) { free(ids); return -1; }
+
+    float qq, qnorm2;
+    search_dot_norm(qvec, qvec, dim, &qq, &qnorm2);
+    const float qnorm = sqrtf(qnorm2);
+    int n = 0;
+    if (cache_ensure(s, dim) == 0) {
+        const crag_vec_cache_t *c = &s->cache;
+        for (int r = 0; r < c->n; r++) {
+            float dot = search_dot(qvec, c->vecs + (size_t)r * dim, dim);
+            topk_offer(dot / (qnorm * c->norms[r] + 1e-9f), c->ids[r], k, &n, scores, ids);
+        }
+    } else {
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            if (sqlite3_column_int(stmt, 1) != dim) continue;
+            if (sqlite3_column_bytes(stmt, 2) != dim * (int)sizeof(float)) continue;
+            const float *rvec = sqlite3_column_blob(stmt, 2);
+            if (!rvec) continue;
+            float dot, rnorm2;
+            search_dot_norm(qvec, rvec, dim, &dot, &rnorm2);
+            topk_offer(dot / (qnorm * sqrtf(rnorm2) + 1e-9f), sqlite3_column_int(stmt, 0),
+                       k, &n, scores, ids);
+        }
+    }
+    sqlite3_finalize(stmt);
+
+    int out = 0;
+    for (int i = 0; i < n; i++) {
+        if (load_chunk(s, ids[i], &results[out]) != 0) continue;   /* deleted mid-search */
+        scores[out++] = scores[i];
+    }
+    free(ids);
+    return out;
 }
 
 /* Build an FTS5 MATCH expression from a raw user query. Strategy: walk the
@@ -527,5 +633,7 @@ int store_sweep_missing(crag_store_t *s, long long run_ts,
 }
 
 void store_close(crag_store_t *s) {
-    if (s && s->db) { sqlite3_close(s->db); s->db = NULL; }
+    if (!s) return;
+    cache_free(&s->cache);
+    if (s->db) { sqlite3_close(s->db); s->db = NULL; }
 }

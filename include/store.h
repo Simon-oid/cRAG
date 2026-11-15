@@ -4,7 +4,24 @@
 #include <sqlite3.h>
 #include "crag.h"
 
-typedef struct { sqlite3 *db; } crag_store_t;
+/* The vectors of one dimension, contiguous in RAM, with their norms: the
+   cosine scan reads these instead of stepping SQLite rows, whose vector sits
+   after the text in an overflow chain. Built at the first cosine search,
+   rebuilt when this connection (total_changes) or another one
+   (PRAGMA data_version) has written since. Capped by CRAG_VEC_CACHE_MB
+   (default 2048; 0 disables); past the cap the scan reads SQLite as before. */
+typedef struct {
+    int       *ids;
+    float     *vecs;           /* n * dim floats, in rowid order */
+    float     *norms;          /* sqrtf(v.v), computed as the streaming scan does */
+    int        n;
+    int        dim;
+    long long  data_version;
+    long long  total_changes;
+    int        valid;
+} crag_vec_cache_t;
+
+typedef struct { sqlite3 *db; crag_vec_cache_t cache; } crag_store_t;
 
 typedef struct {
     int chunks;

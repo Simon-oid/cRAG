@@ -264,6 +264,7 @@ precedence).
 | `CRAG_GEN_MIN_SCORE` | Confidence gate for `--generate` (cosine mode). Overrides the embedder-aware default (`bge-m3` → 0.38, else 0.60). |
 | `CRAG_GEN_TEMP` | Generation sampling temperature (ollama). Default `0` (deterministic). |
 | `CRAG_GEN_K` | Cap the generation context to the top-N retrieved chunks (default: unset = feed all `--top-k`). `2` is the measured floor that helps larger gen models. |
+| `CRAG_VEC_CACHE_MB` | Cap on the in-memory copy of the vectors the cosine scan reads (default 2048; `0` disables it and the scan reads SQLite rows). |
 | `ANTHROPIC_API_KEY` | Required for the Anthropic generation backend. |
 
 ## Benchmarks
@@ -290,10 +291,11 @@ cross-embedder sweep, NFCorpus, and the per-query spot-check are in
 [`docs/benchmarks.md`](docs/benchmarks.md) and the
 [performance report](docs/crag-performance-report.pdf).
 
-**Search speed, honestly:** cRAG's exact cosine over 100,000 chunks takes
-112 ms P50 against 10.5 ms for FAISS `IndexFlatIP` and 15.4 ms for NumPy on
-the same vectors (same top-10 for every query) — it scans SQLite BLOBs
-without SIMD. Fine up to ~100k chunks; see
+**Search speed:** cRAG's exact cosine over 100,000 chunks takes 11.9 ms P50
+against 10.5 ms for FAISS `IndexFlatIP` and 15.3 ms for NumPy on the same
+vectors, with the same top-10 for every query (112 ms before the in-memory
+vector cache and the 8-lane dot product). It costs memory: 1.3 GB peak RSS
+at 100k × 1024, against 0.84 GB for FAISS. See
 [`docs/benchmarks.md`](docs/benchmarks.md#index-search-speed-vs-numpy-and-faiss-2026-11-09).
 
 ### When does hybrid beat vector-only search? (measured 2026-11-09)
@@ -413,8 +415,7 @@ tokenizer) is gated on a real need — see [`ROADMAP.md`](ROADMAP.md).
 ## Limitations
 
 [`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md) lists where cRAG stops, with the
-numbers: an exact scan that is 7–10× slower than NumPy or FAISS at 100k
-chunks, hybrid that does not beat cosine with a good embedder, an untuned
+numbers: an exact scan that holds a copy of every vector in RAM, hybrid that does not beat cosine with a good embedder, an untuned
 FTS5 BM25, text and Markdown only, Linux and macOS only.
 
 ## License

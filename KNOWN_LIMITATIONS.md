@@ -9,20 +9,25 @@ one. Unless noted: Ryzen 7 5800X, Ollama 0.40.4 embedders, measured
 - **Exact search scans every vector.** There is no approximate index (no
   HNSW, no IVF, no quantization). That is a choice: exact, deterministic,
   byte-identical results ([`ROADMAP.md`](ROADMAP.md#out-of-scope-by-design)).
-- **It is slower than NumPy and FAISS on the same scan:**
+- **It is linear in the index, level with FAISS's flat index:**
 
   | chunks | cRAG P50 | NumPy P50 | FAISS `IndexFlatIP` P50 |
   |---|---|---|---|
-  | 10,000 | 10.5 ms | 0.5 ms | 1.1 ms |
-  | 100,000 | 112 ms | 15.4 ms | 10.5 ms |
+  | 10,000 | 1.28 ms | 0.55 ms | 1.09 ms |
+  | 100,000 | 11.9 ms | 15.3 ms | 10.5 ms |
 
-  The scan reads SQLite BLOBs without SIMD. It returns the same top-10 as
-  NumPy for every query
-  ([`docs/bench-vs-numpy-faiss.md`](docs/bench-vs-numpy-faiss.md)). Up to
-  about 100k chunks this is fine for interactive use; past that it is the
-  wrong tool.
-- **Memory grows with the index:** the benchmark process peaked at 909 MB RSS
-  searching 100k chunks of 1024-dimensional vectors.
+  It returns the same top-10 as NumPy for every query
+  ([`docs/bench-vs-numpy-faiss.md`](docs/bench-vs-numpy-faiss.md)). One
+  thread, one query at a time; past a few hundred thousand chunks a scan is
+  the wrong tool.
+- **Memory: the scan keeps a copy of the vectors.** The benchmark process
+  peaked at 1.3 GB RSS searching 100k chunks of 1024 dimensions (0.91 GB
+  before the cache; FAISS 0.84 GB). `CRAG_VEC_CACHE_MB` caps the copy
+  (default 2048; 0 disables it and the scan reads SQLite, 5× slower).
+- **The first search after a write pays for the copy:** it reads every
+  vector once, about the cost of one search before the cache. A one-shot
+  `crag query` from the CLI always pays it; the library, the Python binding
+  and crag-mcp keep the index open and pay it once.
 - **One writer.** SQLite is built with `SQLITE_THREADSAFE=0`. Indexing runs
   embeddings in parallel, but only the main thread writes, and two processes
   must not index the same file at once.

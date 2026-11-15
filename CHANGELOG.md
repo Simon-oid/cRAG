@@ -17,6 +17,30 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Measured 81.6% (39.0% before `test-cli`: the index and query paths and
   every backend had no test).
 
+### Changed
+
+- **Exact cosine search 8–9× faster**, level with FAISS `IndexFlatIP`: at
+  100k × 1024, 112 → 11.9 ms P50 (FAISS 10.5, NumPy 15.3), same top-10 as
+  NumPy for every query (`docs/bench-vs-numpy-faiss.md`). Three changes:
+  - an in-memory copy of the vectors and their norms (`crag_vec_cache_t`),
+    built at the first search and rebuilt after a write by this connection
+    or another one (`PRAGMA data_version`); capped by `CRAG_VEC_CACHE_MB`
+    (default 2048, 0 disables). It costs memory: 1.3 GB peak RSS at 100k,
+    0.91 before;
+  - an 8-lane dot product (`search_dot`, `search_dot_norm`) whose
+    summation order is fixed in C, auto-vectorised with an AVX2 clone on
+    x86-64 Linux: the same bits on every CPU, and bit-identical to the
+    streaming path (tested);
+  - the scan's top-k keeps (score, id) and loads text and vector for the
+    winners only, instead of copying 16 KB result structs per swap.
+- `make bench-scan` (`bench/bench_scan.c`): scan latency against a
+  double-precision brute force, without Python.
+
+- The Python binding `crag-index` is versioned with cRAG: 0.2.0, not 1.0.0.
+  1.0.0 promised an API stability the project does not yet claim. The
+  package was never published to PyPI, so nothing depends on the old
+  number.
+
 ### Fixed
 
 - A deleted file stayed in the index when `crag index` ran again within
@@ -26,15 +50,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The `openai` embedding backend ignored `CRAG_EMBED_URL` and always called
   `api.openai.com`, so an OpenAI-compatible server could only be set with
   `--url`. It now reads the variable, like the other backends.
-
-### Changed
-
-- The Python binding `crag-index` is versioned with cRAG: 0.2.0, not 1.0.0.
-  1.0.0 promised an API stability the project does not yet claim. The
-  package was never published to PyPI, so nothing depends on the old
-  number.
-
-### Fixed
 
 - The Makefile now tracks header dependencies (`-MMD -MP`): a change to
   `include/*.h` rebuilds the objects that include it. Before, `make` after

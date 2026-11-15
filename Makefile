@@ -49,6 +49,14 @@ test: $(TEST_BIN)
 test-cli: $(BIN)
 	python3 tests/test_cli.py ./$(BIN)
 
+# Exact cosine scan latency vs a double-precision brute force (bench/bench_scan.c).
+bench/bench_scan: bench/bench_scan.c $(filter-out src/main.o, $(OBJ)) $(SQLITE_OBJ)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDLIBS)
+
+bench-scan: bench/bench_scan
+	./bench/bench_scan 10000
+	./bench/bench_scan 100000 1024 40
+
 # Offline retrieval-quality gate on its own (no embedding server, no network).
 # Same binary that runs inside `make test`; this target is for a quick check.
 eval-ci: tests/eval_ci
@@ -64,7 +72,7 @@ valgrind: $(TEST_BIN)
 
 clean:
 	rm -f $(OBJ) $(SQLITE_OBJ) $(BIN) $(TEST_BIN) $(OBJ:.o=.d) $(TEST_BIN:=.d)
-	rm -f src/*.gcda src/*.gcno tests/*.gcda tests/*.gcno
+	rm -f src/*.gcda src/*.gcno tests/*.gcda tests/*.gcno bench/bench_scan
 
 # ---- Sanitizer builds ----------------------------------------------------
 # ASan/UBSan find memory-safety + undefined-behaviour bugs that valgrind
@@ -162,7 +170,7 @@ DATASET ?= scifact
 eval: $(BIN) tests/eval_beir
 	@DATASET=$(DATASET) bash tests/eval/run.sh
 
-.PHONY: all test test-cli coverage valgrind test-asan test-tsan check clean manual manual-smoke \
+.PHONY: all test test-cli coverage bench-scan valgrind test-asan test-tsan check clean manual manual-smoke \
         manual-recall manual-gen manual-record manual-compare eval eval-ci
 
 -include $(OBJ:.o=.d) $(TEST_BIN:=.d)
