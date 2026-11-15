@@ -38,6 +38,22 @@ jobs:
       - name: make check (tests + valgrind + ASan/UBSan + TSan + eval-ci)
         run: make check
 
+  # Line coverage of src/ by the unit tests and the CLI test, floor 80%.
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config libcurl4-openssl-dev gcovr
+      - name: make coverage
+        run: make coverage
+      - name: Summary
+        if: always()
+        run: test -f coverage.txt && cat coverage.txt >> "$GITHUB_STEP_SUMMARY" || true
+
   # Portability check: the README claims Linux/macOS support, so prove the
   # macOS half. Plain `make test` only — valgrind isn't available on macOS
   # runners and the sanitizer layers are already exercised on Linux.
@@ -50,10 +66,10 @@ jobs:
       - name: Install dependencies
         run: brew install pkg-config curl
 
-      - name: make test
+      - name: make test test-cli
         run: |
           export PKG_CONFIG_PATH="$(brew --prefix curl)/lib/pkgconfig"
-          make test
+          make test test-cli
 
   # The Python binding: build the wheel, install it into a fresh venv on a
   # machine with no build artefacts and no system libraries beyond a C

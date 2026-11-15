@@ -468,6 +468,16 @@ int store_delete_chunks_for(crag_store_t *s, const char *path) {
     return rc == SQLITE_DONE ? 0 : -1;
 }
 
+long long store_next_run_ts(crag_store_t *s, long long now) {
+    sqlite3_stmt *stmt;
+    long long last = 0;
+    if (sqlite3_prepare_v2(s->db, "SELECT COALESCE(MAX(indexed_at), 0) FROM files",
+                           -1, &stmt, NULL) != SQLITE_OK) return now;
+    if (sqlite3_step(stmt) == SQLITE_ROW) last = sqlite3_column_int64(stmt, 0);
+    sqlite3_finalize(stmt);
+    return last >= now ? last + 1 : now;
+}
+
 int store_sweep_missing(crag_store_t *s, long long run_ts,
                         int *files_removed, int *chunks_removed) {
     if (files_removed)  *files_removed  = 0;

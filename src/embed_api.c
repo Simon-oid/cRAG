@@ -114,7 +114,11 @@ crag_embed_backend_t *embed_oai_create(const char *url, const char *api_key) {
     oai_ctx_t *ctx = malloc(sizeof *ctx);
     if (!b || !ctx) { free(b); free(ctx); return NULL; }
 
-    strncpy(ctx->url, url ? url : DEFAULT_URL, sizeof ctx->url - 1);
+    /* Same precedence as the local and ollama backends: flag, then
+     * CRAG_EMBED_URL, then the public endpoint. Before, the env var was
+     * ignored here and an OpenAI-compatible server could not be used. */
+    const char *u = url ? url : getenv("CRAG_EMBED_URL");
+    strncpy(ctx->url, u ? u : DEFAULT_URL, sizeof ctx->url - 1);
     ctx->url[sizeof ctx->url - 1] = '\0';
     snprintf(ctx->auth_header, sizeof ctx->auth_header,
              "Authorization: Bearer %s", api_key);

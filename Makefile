@@ -44,6 +44,11 @@ tests/%: tests/%.c $(filter-out src/main.o, $(OBJ)) $(SQLITE_OBJ)
 test: $(TEST_BIN)
 	@for t in $(TEST_BIN); do echo "=== $$t ==="; ./$$t || exit 1; done
 
+# The CLI end to end (index, query, generate, export/import) against fake
+# llama.cpp / Ollama / OpenAI / Anthropic servers on localhost. python3, stdlib only.
+test-cli: $(BIN)
+	python3 tests/test_cli.py ./$(BIN)
+
 # Offline retrieval-quality gate on its own (no embedding server, no network).
 # Same binary that runs inside `make test`; this target is for a quick check.
 eval-ci: tests/eval_ci
@@ -59,6 +64,7 @@ valgrind: $(TEST_BIN)
 
 clean:
 	rm -f $(OBJ) $(SQLITE_OBJ) $(BIN) $(TEST_BIN) $(OBJ:.o=.d) $(TEST_BIN:=.d)
+	rm -f src/*.gcda src/*.gcno tests/*.gcda tests/*.gcno
 
 # ---- Sanitizer builds ----------------------------------------------------
 # ASan/UBSan find memory-safety + undefined-behaviour bugs that valgrind
@@ -84,7 +90,8 @@ TSAN_OPTS  := halt_on_error=1:second_deadlock_stack=1
 
 test-asan:
 	$(MAKE) --no-print-directory clean
-	$(MAKE) --no-print-directory test CFLAGS="$(ASAN_CFLAGS)" \
+	$(MAKE) --no-print-directory test test-cli CFLAGS="$(ASAN_CFLAGS)" \
+	    LDFLAGS="-fsanitize=address,undefined" \
 	    ASAN_OPTIONS="$(ASAN_OPTS)" UBSAN_OPTIONS="$(UBSAN_OPTS)"
 
 test-tsan:
@@ -100,7 +107,7 @@ test-tsan:
 # Leaves a fresh default build behind so a later plain `make` is uninstrumented.
 check:
 	$(MAKE) --no-print-directory clean
-	$(MAKE) --no-print-directory test
+	$(MAKE) --no-print-directory test test-cli
 	@command -v valgrind >/dev/null 2>&1 \
 	    && $(MAKE) --no-print-directory valgrind \
 	    || echo "check: valgrind not installed — skipping (ASan/UBSan still cover memory safety)"
@@ -108,6 +115,19 @@ check:
 	$(MAKE) --no-print-directory test-tsan
 	$(MAKE) --no-print-directory clean all
 	@echo "check: all robustness gates passed"
+
+# Line coverage of src/ by the unit tests and the CLI test (gcovr). Fails
+# under COVERAGE_MIN; leaves an uninstrumented tree behind.
+COVERAGE_MIN ?= 80
+COV_CFLAGS := -std=c11 -Wall -Wextra -Wpedantic -O0 -g -Iinclude -Ithird_party \
+              $(CURL_CFLAGS) --coverage
+coverage:
+	@command -v gcovr >/dev/null || { echo "gcovr not installed"; exit 1; }
+	$(MAKE) --no-print-directory clean
+	$(MAKE) --no-print-directory test test-cli CFLAGS="$(COV_CFLAGS)" LDFLAGS="--coverage"
+	gcovr -r . --filter src/ --print-summary --fail-under-line $(COVERAGE_MIN) \
+	    --txt coverage.txt
+	$(MAKE) --no-print-directory clean
 
 # Manual quality tests — human-verifiable, not graded by CI.
 # Override BACKEND with: make manual-smoke BACKEND=openai
@@ -142,7 +162,7 @@ DATASET ?= scifact
 eval: $(BIN) tests/eval_beir
 	@DATASET=$(DATASET) bash tests/eval/run.sh
 
-.PHONY: all test valgrind test-asan test-tsan check clean manual manual-smoke \
+.PHONY: all test test-cli coverage valgrind test-asan test-tsan check clean manual manual-smoke \
         manual-recall manual-gen manual-record manual-compare eval eval-ci
 
 -include $(OBJ:.o=.d) $(TEST_BIN:=.d)

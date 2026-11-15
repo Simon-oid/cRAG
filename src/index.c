@@ -440,7 +440,9 @@ int cmd_index(int argc, char **argv) {
     g_walk.drops_other         = 0;
     g_walk.files_fully_dropped = 0;
     g_walk.files_partial       = 0;
-    g_walk.run_ts              = (long long)time(NULL);
+    /* Not time(NULL) alone: the sweep removes files with indexed_at < run_ts,
+       so a run started in the same second as the previous one swept nothing. */
+    g_walk.run_ts              = store_next_run_ts(&store, (long long)time(NULL));
     g_walk.force               = force;
     g_walk.include_known_docs  = include_known_docs;
     g_walk.files_skipped       = 0;

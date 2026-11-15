@@ -119,7 +119,16 @@ static void test_persists_on_disk(void) {
     remove(path);
 }
 
+static void test_errstr_names_every_code(void) {
+    for (int e = CRAG_OK; e >= CRAG_ECONTEXT; e--) {
+        const char *s = crag_errstr(e);
+        TEST_ASSERT(s && *s);
+    }
+    TEST_ASSERT(crag_errstr(-999) != NULL);
+}
+
 int main(void) {
+    TEST_RUN(test_errstr_names_every_code);
     TEST_RUN(test_open_add_stats);
     TEST_RUN(test_cosine_ranks_by_vector);
     TEST_RUN(test_bm25_needs_no_vector);

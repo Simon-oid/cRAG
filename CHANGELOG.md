@@ -6,6 +6,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `make test-cli` (`tests/test_cli.py`): the CLI end to end against fake
+  llama.cpp, Ollama, OpenAI and Anthropic servers on localhost: index,
+  query in the three modes, `--generate` through three backends,
+  export/import, `--workers`, `--ext`, the confidence gate. Part of
+  `make check`, also under ASan/UBSan, and of the macOS job.
+- `make coverage` and a CI job: line coverage of `src/` with an 80% floor.
+  Measured 81.6% (39.0% before `test-cli`: the index and query paths and
+  every backend had no test).
+
+### Fixed
+
+- A deleted file stayed in the index when `crag index` ran again within
+  the same second as the previous run: the sweep removed files with
+  `indexed_at < run_ts`, at one-second resolution. A run's stamp is now
+  past the latest stored one (`store_next_run_ts`). Found by `test-cli`.
+- The `openai` embedding backend ignored `CRAG_EMBED_URL` and always called
+  `api.openai.com`, so an OpenAI-compatible server could only be set with
+  `--url`. It now reads the variable, like the other backends.
+
 ### Changed
 
 - The Python binding `crag-index` is versioned with cRAG: 0.2.0, not 1.0.0.

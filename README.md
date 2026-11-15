@@ -113,6 +113,8 @@ SQLite is **vendored** in `third_party/` (amalgamation, FTS5 enabled,
 make            # produces ./crag
 make test       # builds and runs the full test suite (incl. the eval-ci gate)
 make check      # full robustness gate: tests + valgrind + ASan/UBSan + TSan
+make test-cli   # the CLI end to end against fake model servers (python3)
+make coverage   # line coverage of src/ (gcovr), 80% floor
 make valgrind   # tests under valgrind only
 make clean      # remove objects and binaries
 ```

@@ -78,6 +78,11 @@ int store_file_touch(crag_store_t *s, const char *path, long long run_ts);
 int store_delete_chunks_for(crag_store_t *s, const char *path);
 /* Delete every `files` row whose indexed_at < run_ts plus the chunks of the
    files removed. Out params count what was removed (either may be NULL). */
+/* A stamp for a new index run: now, or one past the latest stored
+   indexed_at if that is not older, so a run always sorts after the
+   previous one even when both start within the same second. */
+long long store_next_run_ts(crag_store_t *s, long long now);
+
 int store_sweep_missing(crag_store_t *s, long long run_ts,
                         int *files_removed, int *chunks_removed);
 
