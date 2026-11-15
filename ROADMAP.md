@@ -1,7 +1,7 @@
 # Roadmap
 
-cRAG **v0.1.0 is feature-complete** for its target — a personal / single-tenant
-RAG engine driven by an LLM agent. This document records what shipped, what is
+cRAG is **feature-complete** for its target — a personal / single-tenant
+RAG engine driven by an LLM agent. The current release is **v0.2.0**. This document records what shipped, what is
 deliberately deferred, and the principle that governs both.
 
 ## Guiding principle: measure before you keep
@@ -24,6 +24,19 @@ roadmap:
    (NFCorpus, 0.3746 → 0.3284). The infrastructure stays available but off by
    default. The live levers are generation/reasoning and the agent-side
    abstention contract, not new retrieval machinery.
+
+## Shipped (v0.2.0)
+
+- **Library API** (`include/crag_lib.h`): open / add / search / stats / close
+  over an index, usable without the CLI.
+- **Python binding** `crag-index`: a self-contained cffi wheel with zero-copy
+  float32 vectors, built and tested in CI on Linux and macOS.
+- **Evaluation with uncertainty:** per-query scores, 95% bootstrap intervals
+  and a paired permutation test
+  ([`docs/eval-significance.md`](docs/eval-significance.md)).
+- **Italian benchmark** (`DATASET=squadit`, 500 questions over SQuAD-it).
+- **Speed benchmark against NumPy and FAISS**
+  ([`docs/bench-vs-numpy-faiss.md`](docs/bench-vs-numpy-faiss.md)).
 
 ## Shipped (v0.1.0)
 
