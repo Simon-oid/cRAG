@@ -1,6 +1,7 @@
 # cRAG
 
 [![CI](https://github.com/Simon-oid/cRAG/actions/workflows/ci.yml/badge.svg)](https://github.com/Simon-oid/cRAG/actions/workflows/ci.yml)
+[![Coverage ≥80%, gated in CI](https://img.shields.io/badge/coverage-%E2%89%A580%25%20gated-brightgreen)](https://github.com/Simon-oid/cRAG/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Language: C11](https://img.shields.io/badge/language-C11-00599C.svg)](https://en.wikipedia.org/wiki/C11_(C_standard_revision))
 [![Dependencies: minimal](https://img.shields.io/badge/deps-libcurl%20%C2%B7%20libm%20%C2%B7%20pthread-lightgrey.svg)](#requirements)
