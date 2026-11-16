@@ -214,9 +214,14 @@ static int load_chunk(crag_store_t *s, int id, crag_chunk_t *out) {
     if (sqlite3_step(stmt) == SQLITE_ROW) {
         int dim = sqlite3_column_int(stmt, 2);
         const void *vec = sqlite3_column_blob(stmt, 3);
-        char *src = strdup((const char *)sqlite3_column_text(stmt, 0));
-        char *txt = strdup((const char *)sqlite3_column_text(stmt, 1));
-        if (src && txt && vec && dim > 0 && dim <= CRAG_EMBED_DIM_MAX) {
+        /* NULL despite NOT NULL: out of memory, or a database not written by
+           cRAG. strdup(NULL) is undefined, so check first. */
+        const char *s0 = (const char *)sqlite3_column_text(stmt, 0);
+        const char *s1 = (const char *)sqlite3_column_text(stmt, 1);
+        char *src = s0 ? strdup(s0) : NULL;
+        char *txt = s1 ? strdup(s1) : NULL;
+        if (src && txt && vec && dim > 0 && dim <= CRAG_EMBED_DIM_MAX &&
+            sqlite3_column_bytes(stmt, 3) == dim * (int)sizeof(float)) {
             out->id = id;
             out->source = src;
             out->text = txt;
@@ -443,8 +448,10 @@ int store_search_bm25(crag_store_t *s, const char *qtext, int k,
         const float *rvec = sqlite3_column_blob(stmt, 4);
         if (rdim <= 0 || rdim > CRAG_EMBED_DIM_MAX) continue;
         if (vbytes != rdim * (int)sizeof(float) || !rvec) continue;
-        char *src = strdup((const char *)sqlite3_column_text(stmt, 1));
-        char *txt = strdup((const char *)sqlite3_column_text(stmt, 2));
+        const char *s1 = (const char *)sqlite3_column_text(stmt, 1);
+        const char *s2 = (const char *)sqlite3_column_text(stmt, 2);
+        char *src = s1 ? strdup(s1) : NULL;     /* strdup(NULL) is undefined */
+        char *txt = s2 ? strdup(s2) : NULL;
         if (!src || !txt) { free(src); free(txt); continue; }
         results[n].id     = sqlite3_column_int(stmt, 0);
         results[n].source = src;
