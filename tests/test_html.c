@@ -60,6 +60,13 @@ static void test_attributes_with_angle_brackets_do_not_leak(void) {
     free(t);
 }
 
+/* A tag name starts with a letter: "<3" and "< b" are text, not tags. */
+static void test_a_bracket_before_a_digit_is_text(void) {
+    char *t = conv("<p>I <3 this, and 2 < 5 too.</p><p>Next</p>");
+    TEST_ASSERT(t && has(t, "I <3 this, and 2 < 5 too.") && has(t, "Next"));
+    free(t);
+}
+
 static void test_truncated_input_terminates(void) {
     const char *cases[] = { "<", "<p", "<!--", "<script>", "&", "&#", "&#x", "&amp", "<a href=\"" };
     for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
@@ -78,6 +85,7 @@ int main(void) {
     TEST_RUN(test_whitespace_collapses_outside_pre);
     TEST_RUN(test_lists_and_breaks);
     TEST_RUN(test_attributes_with_angle_brackets_do_not_leak);
+    TEST_RUN(test_a_bracket_before_a_digit_is_text);
     TEST_RUN(test_truncated_input_terminates);
     TEST_DONE();
 }

@@ -178,7 +178,9 @@ static size_t markup(out_t *o, const char *in, size_t n, size_t i) {
     if (closing) j++;
     char name[MAX_TAG_NAME + 1];
     size_t len = 0;
-    while (j < n && isalnum((unsigned char)in[j])) {
+    /* A tag name starts with an ASCII letter ("<3" is text), then
+       letters or digits ("h1"). */
+    while (j < n && (len == 0 ? isalpha((unsigned char)in[j]) : isalnum((unsigned char)in[j]))) {
         if (len < MAX_TAG_NAME) name[len++] = (char)tolower((unsigned char)in[j]);
         j++;
     }
