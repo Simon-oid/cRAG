@@ -367,7 +367,7 @@ with crag.Index("notes.db") as idx:
     print(hits[0].source, hits[0].score, hits[0].cosine)
 ```
 
-CI builds the wheel on Linux and macOS (Python 3.9 and 3.13), installs it into
+CI builds the wheel on Linux and macOS (Python 3.11 and 3.13), installs it into
 a fresh virtualenv and runs `python/tests/` without and with NumPy.
 
 ## MCP / agent integration

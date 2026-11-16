@@ -8,7 +8,7 @@ version = "0.2.0"
 description = "cRAG's hybrid retrieval index (exact cosine + SQLite FTS5 BM25, RRF fusion) as a Python library, in C with no runtime dependencies"
 readme = "python/README.md"
 license = { text = "MIT" }
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 dependencies = ["cffi>=1.15"]
 optional-dependencies = { numpy = ["numpy>=1.21"] }
 classifiers = [

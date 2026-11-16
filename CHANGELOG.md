@@ -24,6 +24,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The Python binding requires Python 3.11 or later, and CI tests 3.11 and
+  3.13. GitHub's Ubuntu 26.04 runners no longer ship 3.9, and 3.9 and 3.10
+  are past end of life.
 - `CRAG_FTS_TOKENIZER` picks the FTS5 tokenizer: `unicode61` (default),
   `porter`, `trigram`, or `italian` (new, `src/fts_italian.c`: unicode61
   plus Savoy's light Italian stemmer). Changing it rebuilds the FTS index
