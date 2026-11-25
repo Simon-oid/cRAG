@@ -90,7 +90,8 @@ Three modes:
 ### 5. Generation — `src/generate.c`, `src/gen_*.c`
 
 A plugin architecture via vtable. Backends: `anthropic` (Claude, default
-`claude-sonnet-4-6`), `openai`, `local`/`ollama`. The generator takes a system
+`claude-sonnet-4-6`), `local` (llama.cpp `/completion`) and `ollama`;
+`openai` is accepted as an alias of `local`, not an OpenAI chat client. The generator takes a system
 prompt plus a user prompt built from the retrieved chunks and returns an
 allocated string the caller owns.
 

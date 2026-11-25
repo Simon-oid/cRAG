@@ -11,13 +11,13 @@
 Index a directory of `.md` / `.txt` files, embed the chunks through a
 pluggable backend, store everything in SQLite, then query with cosine,
 BM25, or hybrid retrieval — optionally feeding the top-K into a generator
-(Claude, GPT, or a local llama.cpp / Ollama).
+(Claude, or a local llama.cpp / Ollama server).
 
 No C++. No external JSON library. SQLite is vendored. The only runtime
 dependencies are `libcurl`, `libm`, `libpthread`, `libdl`.
 
 ```text
-~3 300 lines of C  ·  one binary (crag) + a test suite  ·  single Makefile
+~4 300 lines of C  ·  the crag binary, a C library and a Python binding  ·  single Makefile
 ```
 
 ![cRAG demo: index, incremental rerun, hybrid query with term highlighting, local generation](docs/demo.gif)
@@ -92,7 +92,7 @@ The pipeline has five stages, each in its own module:
 4. **Search** — cosine (exact scan), BM25 (FTS5), or hybrid (Reciprocal Rank
    Fusion, k=60). Hybrid is the default.
 5. **Generation** — pluggable vtable: `anthropic` (default
-   `claude-sonnet-4-6`), `openai`, `local`/`ollama`.
+   `claude-sonnet-4-6`), `local` (llama.cpp), `ollama`.
 
 A full design walkthrough lives in [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
@@ -185,10 +185,13 @@ Plug-in vtables in `src/embed*.c` and `src/gen_*.c`. Pick with
 |---|---|---|---|
 | `local`      | ✓ (llama.cpp `/embedding`) | ✓ | `llama-server` running locally |
 | `ollama`     | ✓ | ✓ | `ollama serve` running locally |
-| `openai`     | ✓ (`text-embedding-3-small`) | ✓ | `OPENAI_API_KEY` |
+| `openai`     | ✓ (`text-embedding-3-small`) | alias of `local` | `OPENAI_API_KEY` (embedding only) |
 | `anthropic`  | — | ✓ (default `claude-sonnet-4-6`) | `ANTHROPIC_API_KEY` |
 
-OpenAI's batch endpoint is used natively (up to 256 items per call). For Ollama
+As a generation backend, `openai` is an alias of `local`: it posts to
+llama.cpp's `/completion` endpoint, with no key; there is no OpenAI chat
+generator. OpenAI's embedding batch endpoint is used natively (up to 256
+items per call). For Ollama
 and llama.cpp, `--workers N` enables an in-process pthread pool that fans out
 per-chunk embedding calls — see [Indexing](#indexing).
 
@@ -271,7 +274,7 @@ precedence).
 | `CRAG_EMBED_MODEL` | Embedding model. English: `mxbai-embed-large`. Non-English: **`bge-m3`** (multilingual, 1024-dim drop-in). |
 | `CRAG_EMBED_URL` | Custom embedding API endpoint. |
 | `OPENAI_API_KEY` | Required for the OpenAI embedding backend. |
-| `CRAG_GEN_BACKEND` | `local` (default), `anthropic`, `openai`, `ollama`. |
+| `CRAG_GEN_BACKEND` | `local` (default), `anthropic`, `ollama`; `openai` is an alias of `local`. |
 | `CRAG_GEN_URL` | Custom generation endpoint. |
 | `CRAG_GEN_MODEL` | Model override (e.g. `claude-sonnet-4-6`). |
 | `CRAG_GEN_MAX_TOKENS` | Max tokens in the generated response (default 1024). |
@@ -281,6 +284,8 @@ precedence).
 | `CRAG_VEC_CACHE_MB` | Cap on the in-memory copy of the vectors the cosine scan reads (default 2048; `0` disables it and the scan reads SQLite rows). |
 | `CRAG_FTS_TOKENIZER` | FTS5 tokenizer: `unicode61` (default), `porter` (English stemming), `italian` (light Italian stemming), `trigram`. Changing it rebuilds the BM25 index from the stored text. |
 | `ANTHROPIC_API_KEY` | Required for the Anthropic generation backend. |
+| `CRAG_GEN_API_KEY` | Anthropic key that takes precedence over `ANTHROPIC_API_KEY`. |
+| `CRAG_RERANK_URL`, `CRAG_RERANK_MODEL` | Cross-encoder reranker (llama.cpp `/rerank`, default `http://localhost:8090/rerank`, model `reranker`). Used only by the BEIR harness, where it measured no gain ([`ROADMAP.md`](ROADMAP.md)); the CLI does not rerank. |
 
 ## Benchmarks
 
@@ -400,9 +405,11 @@ validated end-to-end with Claude as the reasoning host in
 
 ```text
 src/          chunker, store, search, embed/gen backends, indexer, query
-include/      public headers
+include/      public headers (crag_lib.h is the library API)
+python/       the crag-index binding (cffi) and its tests
 tests/        unit + integration tests; tests/manual/ holds graded golden sets
 tests/eval/   BEIR harness + Python reference implementations
+bench/        scan micro-benchmark and the NumPy / FAISS comparison
 third_party/  vendored sqlite3.{c,h} (amalgamation, FTS5 enabled)
 docs/         benchmarks, agentic-readiness, agent validation, performance report
 .github/      CI workflow + issue/PR templates

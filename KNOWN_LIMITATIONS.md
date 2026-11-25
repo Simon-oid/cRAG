@@ -87,5 +87,8 @@ one. Unless noted: Ryzen 7 5800X, Ollama 0.40.4 embedders, measured
 - **The Python binding `crag-index` is not on PyPI.** It installs from a
   checkout (`pip install .`). CI builds the wheel and tests it in a clean
   virtualenv on Linux and macOS.
+- **No OpenAI generator.** `CRAG_GEN_BACKEND=openai` is an alias of
+  `local` (llama.cpp's `/completion`); generation runs on Anthropic, a local
+  llama.cpp server or Ollama. OpenAI is supported for embeddings only.
 - **End-to-end use needs an embedder server** (Ollama, llama.cpp, or an API
   key). The binding has none: the caller brings the vectors.
